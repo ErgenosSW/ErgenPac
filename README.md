@@ -1,0 +1,42 @@
+# ErgenPac
+
+ErgenPac is the graphical package manager and system updater for ErgenOS.
+
+The first release focuses on complete system updates, package search, installation and removal. Installing software always includes a full database refresh and system upgrade, preventing unsupported partial upgrades.
+
+ErgenPac separates configured pacman repositories and Flathub results, shows user-facing installed applications, reports live operation progress with download speed, and refreshes package state automatically without blanking the current results. Third-party repositories configured in pacman, including Chaotic-AUR, are searched automatically.
+
+## Features
+
+- Combined pacman and Flatpak update view
+- Live search with exact-match ranking and category shortcuts
+- Installed application view without core system package noise
+- Transaction summary before package installation or removal
+- Aggregate download progress and safe cancellation before package deployment
+- Friendly errors for offline repositories, locked databases, invalid signatures and low disk space
+- Restricted polkit helper for privileged operations
+
+## Development
+
+Run tests:
+
+```bash
+PYTHONPATH=src python3 -m unittest discover -s tests -v
+```
+
+Build:
+
+```bash
+meson setup build
+meson compile -C build
+```
+
+Create an Arch package from a tagged source release:
+
+```bash
+makepkg -s
+```
+
+## Security
+
+Unprivileged package discovery is separated from system-changing operations. ErgenPac uses a restricted polkit helper that accepts only complete upgrades and validated package install or remove requests.

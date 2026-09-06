@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=ErgenPac
+Comment=Manage software and system updates
+Exec=ergenpac
+Icon=io.github.ergenossw.ErgenPac
+Terminal=false
+Type=Application
+Categories=Settings;PackageManager;
+Keywords=software;packages;updates;pacman;flatpak;flathub;
+StartupNotify=true

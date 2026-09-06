@@ -1,0 +1,7 @@
+/build/
+/*.pkg.tar.*
+/*.tar.gz
+/pkg/
+/src/ergenpac.egg-info/
+/**/__pycache__/
+*.py[cod]

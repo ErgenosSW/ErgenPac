@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.ergenossw.ErgenPac</id>
+  <name>ErgenPac</name>
+  <summary>Install software and update ErgenOS</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <developer id="io.github.ergenossw"><name>ErgenOS Project</name></developer>
+  <description>
+    <p>ErgenPac provides a graphical interface for package management and complete system updates on ErgenOS.</p>
+    <p>Search every configured pacman repository and Flathub, browse installed applications, review transactions and follow download progress without exposing terminal output.</p>
+  </description>
+  <launchable type="desktop-id">io.github.ergenossw.ErgenPac.desktop</launchable>
+  <icon type="stock">io.github.ergenossw.ErgenPac</icon>
+  <url type="homepage">https://github.com/ErgenosSW/ErgenPac</url>
+  <url type="bugtracker">https://github.com/ErgenosSW/ErgenPac/issues</url>
+  <categories>
+    <category>System</category>
+    <category>PackageManager</category>
+  </categories>
+  <releases>
+    <release version="0.1.0" date="2026-09-06">
+      <description><p>Initial development release.</p></description>
+    </release>
+  </releases>
+  <provides><binary>ergenpac</binary></provides>
+  <content_rating type="oars-1.1"/>
+</component>

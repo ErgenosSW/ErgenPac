@@ -1,0 +1,4 @@
+#!@PYTHON@
+from ergenpac.app import main
+
+raise SystemExit(main())
