@@ -1,7 +1,7 @@
 # Maintainer: ErgenOS Project <https://github.com/ErgenosSW>
 
 pkgname=ergenpac
-pkgver=0.1.0
+pkgver=0.1.1
 pkgrel=1
 pkgdesc='Graphical package manager and system updater for ErgenOS'
 arch=('any')

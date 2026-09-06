@@ -76,6 +76,12 @@ class ErgenPacWindow(Adw.ApplicationWindow):
 
         toolbar = Adw.ToolbarView()
         header = Adw.HeaderBar()
+        brand_icon = Gtk.Image.new_from_icon_name(APPLICATION_ID)
+        brand_icon.set_pixel_size(32)
+        brand_icon.set_tooltip_text("ErgenPac")
+        brand_icon.set_margin_start(6)
+        brand_icon.set_margin_end(6)
+        header.pack_start(brand_icon)
         toolbar.add_top_bar(header)
         self.set_content(toolbar)
 

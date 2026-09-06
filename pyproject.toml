@@ -1,6 +1,6 @@
 [project]
 name = "ergenpac"
-version = "0.1.0.dev0"
+version = "0.1.1"
 requires-python = ">=3.11"
 
 [tool.ruff]

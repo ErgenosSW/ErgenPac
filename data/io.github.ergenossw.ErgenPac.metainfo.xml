@@ -19,6 +19,9 @@
     <category>PackageManager</category>
   </categories>
   <releases>
+    <release version="0.1.1" date="2026-09-06">
+      <description><p>Add the ErgenPac brand icon to the application header.</p></description>
+    </release>
     <release version="0.1.0" date="2026-09-06">
       <description><p>Initial development release.</p></description>
     </release>
