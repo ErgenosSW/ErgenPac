@@ -15,12 +15,22 @@ ErgenPac separates configured pacman repositories and Flathub results, shows use
 ## Features
 
 - Combined pacman and Flatpak update view
+- Hardware-aware Driver Manager for processor microcode and Intel, AMD or supported NVIDIA graphics
 - Live search with exact-match ranking and category shortcuts
 - Installed application view without core system package noise
 - Transaction summary before package installation or removal
-- Aggregate download progress and safe cancellation before package deployment
+- Inline installation progress beside the selected package
+- Aggregate update and driver download progress with safe cancellation before package deployment
+- A centered restart action after a completed system update
 - Friendly errors for offline repositories, locked databases, invalid signatures and low disk space
 - Restricted polkit helper for privileged operations
+
+Driver Manager uses packages from configured repositories and always shows the
+proposed package list before authentication. Modern NVIDIA hardware uses the
+official `nvidia-open-dkms` stack. Unknown or legacy NVIDIA generations are
+flagged for manual review instead of receiving a potentially incompatible
+driver. On systems configured with ErgenOS Secure Boot, DKMS driver
+installation refreshes the signed boot components automatically.
 
 ## Development
 

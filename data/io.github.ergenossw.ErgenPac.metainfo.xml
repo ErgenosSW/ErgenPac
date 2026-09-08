@@ -8,7 +8,7 @@
   <developer id="io.github.ergenossw"><name>ErgenOS Project</name></developer>
   <description>
     <p>ErgenPac provides a graphical interface for package management and complete system updates on ErgenOS.</p>
-    <p>Search every configured pacman repository and Flathub, browse installed applications, review transactions and follow download progress without exposing terminal output.</p>
+    <p>Search every configured pacman repository and Flathub, browse installed applications, review transactions, follow inline download progress and install recommended hardware drivers.</p>
   </description>
   <launchable type="desktop-id">io.github.ergenossw.ErgenPac.desktop</launchable>
   <icon type="stock">io.github.ergenossw.ErgenPac</icon>
@@ -19,6 +19,9 @@
     <category>PackageManager</category>
   </categories>
   <releases>
+    <release version="0.2.0" date="2026-09-09">
+      <description><p>Add Driver Manager, inline installation progress, post-update restart controls and a refreshed interface.</p></description>
+    </release>
     <release version="0.1.1" date="2026-09-06">
       <description><p>Add the ErgenPac brand icon to the application header.</p></description>
     </release>

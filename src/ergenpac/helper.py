@@ -11,6 +11,13 @@ import sys
 
 
 PACKAGE_NAME = re.compile(r"^[A-Za-z0-9@._+:-]+$")
+DRIVER_PACKAGES = frozenset({
+    "amd-ucode", "intel-ucode", "lib32-mesa", "lib32-nvidia-utils",
+    "lib32-vulkan-intel", "lib32-vulkan-radeon", "linux-firmware",
+    "linux-zen-headers", "mesa",
+    "nvidia-open-dkms", "nvidia-settings", "nvidia-utils", "vulkan-intel",
+    "vulkan-radeon",
+})
 
 
 def command(arguments: list[str]) -> list[str]:
@@ -43,6 +50,16 @@ def command(arguments: list[str]) -> list[str]:
             "--noninteractive",
             application,
         ]
+    if len(arguments) >= 2 and arguments[0] == "install-drivers":
+        packages = list(dict.fromkeys(arguments[1:]))
+        if any(
+            not PACKAGE_NAME.fullmatch(package) or package not in DRIVER_PACKAGES
+            for package in packages
+        ):
+            raise ValueError("invalid driver package selection")
+        return ["/usr/bin/pacman", "-Syu", "--needed", "--noconfirm", *packages]
+    if arguments == ["reboot"]:
+        return ["/usr/bin/systemctl", "reboot"]
     raise ValueError("invalid operation")
 
 
@@ -60,6 +77,16 @@ def main() -> int:
             return subprocess.run(
                 ["/usr/bin/flatpak", "update", "--system", "--noninteractive"],
                 check=False,
+            ).returncode
+        return 0
+    if sys.argv[1:2] == ["install-drivers"]:
+        result = subprocess.run(requested, check=False)
+        if result.returncode != 0:
+            return result.returncode
+        secure_boot_tool = "/usr/bin/ergenos-secureboot"
+        if os.path.isfile(secure_boot_tool) and os.access(secure_boot_tool, os.X_OK):
+            return subprocess.run(
+                [secure_boot_tool, "refresh"], check=False
             ).returncode
         return 0
     os.execv(requested[0], requested)

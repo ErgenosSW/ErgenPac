@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 
@@ -35,6 +36,91 @@ class Update:
     new_version: str
     source: str = "System repositories"
     backend: str = "pacman"
+
+
+@dataclass(frozen=True)
+class DriverRecommendation:
+    category: str
+    hardware: str
+    packages: tuple[str, ...]
+
+
+DRIVER_PACKAGES = frozenset({
+    "amd-ucode",
+    "intel-ucode",
+    "lib32-mesa",
+    "lib32-nvidia-utils",
+    "lib32-vulkan-intel",
+    "lib32-vulkan-radeon",
+    "linux-firmware",
+    "linux-zen-headers",
+    "mesa",
+    "nvidia-open-dkms",
+    "nvidia-settings",
+    "nvidia-utils",
+    "vulkan-intel",
+    "vulkan-radeon",
+})
+
+
+def recommend_drivers(
+    pci_output: str, cpuinfo: str, *, multilib: bool
+) -> list[DriverRecommendation]:
+    recommendations: list[DriverRecommendation] = []
+    vendor_match = re.search(r"^vendor_id\s*:\s*(\S+)", cpuinfo, re.MULTILINE)
+    vendor = vendor_match.group(1) if vendor_match else ""
+    if vendor == "GenuineIntel":
+        recommendations.append(
+            DriverRecommendation("Processor", "Intel processor", ("intel-ucode",))
+        )
+    elif vendor == "AuthenticAMD":
+        recommendations.append(
+            DriverRecommendation("Processor", "AMD processor", ("amd-ucode",))
+        )
+
+    gpu_lines = [
+        line.strip() for line in pci_output.splitlines()
+        if re.search(r"\b(VGA compatible controller|3D controller|Display controller)\b", line)
+    ]
+    for line in gpu_lines:
+        lowered = line.casefold()
+        if "nvidia" in lowered:
+            modern_nvidia = re.search(
+                r"\bRTX\b|\bGTX\s*16\d\d\b|\b(?:TU|GA|AD|GB)\d{3}\b",
+                line,
+                re.IGNORECASE,
+            )
+            if modern_nvidia:
+                packages = [
+                    "linux-zen-headers", "nvidia-open-dkms", "nvidia-utils",
+                    "nvidia-settings",
+                ]
+                if multilib:
+                    packages.append("lib32-nvidia-utils")
+                recommendations.append(
+                    DriverRecommendation("NVIDIA graphics", line, tuple(packages))
+                )
+            else:
+                recommendations.append(
+                    DriverRecommendation(
+                        "NVIDIA graphics — manual selection required", line, ()
+                    )
+                )
+        elif (
+            "amd" in lowered
+            or "advanced micro devices" in lowered
+            or re.search(r"\bATI\b", line, re.IGNORECASE)
+        ):
+            packages = ["mesa", "vulkan-radeon"]
+            if multilib:
+                packages.extend(("lib32-mesa", "lib32-vulkan-radeon"))
+            recommendations.append(DriverRecommendation("Graphics", line, tuple(packages)))
+        elif "intel" in lowered:
+            packages = ["mesa", "vulkan-intel"]
+            if multilib:
+                packages.extend(("lib32-mesa", "lib32-vulkan-intel"))
+            recommendations.append(DriverRecommendation("Graphics", line, tuple(packages)))
+    return recommendations
 
 
 def parse_search_output(output: str, installed: set[str] | None = None) -> list[Package]:
@@ -268,9 +354,18 @@ def helper_command(action: str, package: str | None = None) -> list[str]:
     base = ["pkexec", "/usr/lib/ergenpac/ergenpac-helper"]
     if action == "upgrade" and package is None:
         return [*base, "upgrade"]
+    if action == "reboot" and package is None:
+        return [*base, "reboot"]
     if action in {"install", "remove", "install-flatpak", "remove-flatpak"} and package is not None:
         return [*base, action, validate_package_name(package)]
     raise ValueError("invalid package operation")
+
+
+def driver_helper_command(packages: Sequence[str]) -> list[str]:
+    validated = tuple(dict.fromkeys(validate_package_name(name) for name in packages))
+    if not validated or any(name not in DRIVER_PACKAGES for name in validated):
+        raise ValueError("invalid driver package selection")
+    return ["pkexec", "/usr/lib/ergenpac/ergenpac-helper", "install-drivers", *validated]
 
 
 def reboot_recommended(updates: list[Update]) -> bool:

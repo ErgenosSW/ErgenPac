@@ -32,3 +32,17 @@ class HelperTests(TestCase):
                 "org.example.App",
             ],
         )
+
+    def test_driver_install_is_restricted_to_allowlisted_packages(self) -> None:
+        self.assertEqual(
+            command(["install-drivers", "nvidia-open-dkms", "nvidia-utils"]),
+            [
+                "/usr/bin/pacman", "-Syu", "--needed", "--noconfirm",
+                "nvidia-open-dkms", "nvidia-utils",
+            ],
+        )
+        with self.assertRaises(ValueError):
+            command(["install-drivers", "arbitrary-package"])
+
+    def test_reboot_is_an_exact_allowlisted_operation(self) -> None:
+        self.assertEqual(command(["reboot"]), ["/usr/bin/systemctl", "reboot"])

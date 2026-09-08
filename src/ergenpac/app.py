@@ -21,8 +21,10 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 
 from .core import (
+    DriverRecommendation,
     Package,
     Update,
+    driver_helper_command,
     format_size,
     friendly_error,
     helper_command,
@@ -38,6 +40,7 @@ from .core import (
     parse_transaction_preview,
     parse_updates,
     reboot_recommended,
+    recommend_drivers,
     sort_packages,
 )
 
@@ -50,7 +53,7 @@ class ErgenPacWindow(Adw.ApplicationWindow):
     def __init__(self, application: Adw.Application) -> None:
         super().__init__(application=application)
         self.set_title("ErgenPac")
-        self.set_default_size(860, 680)
+        self.set_default_size(1040, 760)
         self._updates: list[Update] = []
         self._flatpak_updates: list[Update] = []
         self._installed: set[str] = set()
@@ -73,6 +76,12 @@ class ErgenPacWindow(Adw.ApplicationWindow):
         self._progress_completed_bytes = 0
         self._progress_current_bytes = 0
         self._progress_transfer_identifier: str | None = None
+        self._inline_progress: Gtk.ProgressBar | None = None
+        self._inline_button: Gtk.Button | None = None
+        self._driver_recommendations: list[DriverRecommendation] = []
+        self._driver_packages: list[str] = []
+
+        self._install_styles()
 
         toolbar = Adw.ToolbarView()
         header = Adw.HeaderBar()
@@ -96,7 +105,25 @@ class ErgenPacWindow(Adw.ApplicationWindow):
         self.stack.add_titled_with_icon(
             self._build_software_page(), "software", "Software", "system-software-install-symbolic"
         )
+        self.stack.add_titled_with_icon(
+            self._build_drivers_page(), "drivers", "Driver Manager", "preferences-system-symbolic"
+        )
         GLib.idle_add(self.check_updates)
+
+    def _install_styles(self) -> None:
+        provider = Gtk.CssProvider()
+        provider.load_from_data(b"""
+          window { background: @window_bg_color; }
+          headerbar { background: @headerbar_bg_color; }
+          .ergen-page { padding: 30px; }
+          .ergen-hero { padding: 18px 22px; border-radius: 16px; background: alpha(@accent_bg_color, 0.12); }
+          .ergen-card { border-radius: 14px; }
+          .inline-progress { min-width: 120px; }
+          .success-action { padding: 18px; border-radius: 14px; background: alpha(@success_color, 0.12); }
+        """)
+        Gtk.StyleContext.add_provider_for_display(
+            self.get_display(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        )
 
     def _build_updates_page(self) -> Gtk.Widget:
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
@@ -104,6 +131,7 @@ class ErgenPacWindow(Adw.ApplicationWindow):
         page.set_margin_bottom(24)
         page.set_margin_start(24)
         page.set_margin_end(24)
+        page.add_css_class("ergen-page")
 
         title = Gtk.Label(label="System updates", xalign=0)
         title.add_css_class("title-1")
@@ -125,6 +153,20 @@ class ErgenPacWindow(Adw.ApplicationWindow):
         controls.append(self.upgrade_button)
         page.append(controls)
 
+        self.reboot_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        self.reboot_box.set_halign(Gtk.Align.CENTER)
+        self.reboot_box.add_css_class("success-action")
+        reboot_label = Gtk.Label(label="Updates installed successfully")
+        reboot_label.add_css_class("heading")
+        self.reboot_box.append(reboot_label)
+        self.reboot_button = Gtk.Button(label="Restart system")
+        self.reboot_button.add_css_class("suggested-action")
+        self.reboot_button.set_halign(Gtk.Align.CENTER)
+        self.reboot_button.connect("clicked", self._confirm_reboot)
+        self.reboot_box.append(self.reboot_button)
+        self.reboot_box.set_visible(False)
+        page.append(self.reboot_box)
+
         scrolled = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER)
         scrolled.set_vexpand(True)
         self.update_list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
@@ -139,6 +181,7 @@ class ErgenPacWindow(Adw.ApplicationWindow):
         page.set_margin_bottom(24)
         page.set_margin_start(24)
         page.set_margin_end(24)
+        page.add_css_class("ergen-page")
 
         title = Gtk.Label(label="Software", xalign=0)
         title.add_css_class("title-1")
@@ -197,6 +240,152 @@ class ErgenPacWindow(Adw.ApplicationWindow):
         self.software_stack.add_named(installed, "installed")
         page.append(self.software_stack)
         return page
+
+    def _build_drivers_page(self) -> Gtk.Widget:
+        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
+        for setter in (
+            page.set_margin_top,
+            page.set_margin_bottom,
+            page.set_margin_start,
+            page.set_margin_end,
+        ):
+            setter(24)
+        page.add_css_class("ergen-page")
+
+        hero = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        hero.add_css_class("ergen-hero")
+        title = Gtk.Label(label="Driver Manager", xalign=0)
+        title.add_css_class("title-1")
+        hero.append(title)
+        description = Gtk.Label(
+            label=(
+                "Detect graphics hardware and processor microcode, then install "
+                "recommended packages from configured repositories."
+            ),
+            xalign=0,
+            wrap=True,
+        )
+        description.add_css_class("dim-label")
+        hero.append(description)
+        page.append(hero)
+
+        controls = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        self.driver_status = Gtk.Label(label="Hardware has not been scanned yet", xalign=0)
+        self.driver_status.set_hexpand(True)
+        controls.append(self.driver_status)
+        self.driver_scan_button = Gtk.Button(label="Scan hardware")
+        self.driver_scan_button.connect("clicked", lambda _button: self._scan_drivers())
+        controls.append(self.driver_scan_button)
+        self.driver_install_button = Gtk.Button(label="Install recommended")
+        self.driver_install_button.add_css_class("suggested-action")
+        self.driver_install_button.set_sensitive(False)
+        self.driver_install_button.connect("clicked", self._confirm_driver_install)
+        controls.append(self.driver_install_button)
+        page.append(controls)
+
+        scrolled = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER)
+        scrolled.set_vexpand(True)
+        self.driver_list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
+        self.driver_list.add_css_class("boxed-list")
+        scrolled.set_child(self.driver_list)
+        page.append(scrolled)
+        return page
+
+    def _scan_drivers(self) -> None:
+        if self._busy:
+            return
+        self._set_busy(True)
+        self.driver_status.set_text("Detecting hardware...")
+        self._run(["lspci", "-nn"], self._drivers_pci_loaded)
+
+    def _drivers_pci_loaded(self, status: int, output: str, error: str) -> None:
+        if status != 0:
+            self._set_busy(False)
+            self.driver_status.set_text("Hardware detection failed")
+            self._show_result("Driver scan failed", friendly_error(error or output, status))
+            return
+        cpuinfo = Path("/proc/cpuinfo").read_text(encoding="utf-8", errors="replace")
+        pacman_conf = Path("/etc/pacman.conf").read_text(encoding="utf-8", errors="replace")
+        multilib = any(
+            line.strip() == "[multilib]" for line in pacman_conf.splitlines()
+            if not line.lstrip().startswith("#")
+        )
+        self._driver_recommendations = recommend_drivers(output, cpuinfo, multilib=multilib)
+        self._run(["pacman", "-Qq"], self._drivers_installed_loaded)
+
+    def _drivers_installed_loaded(self, status: int, output: str, _error: str) -> None:
+        installed = set(output.splitlines()) if status == 0 else set()
+        self._clear_list(self.driver_list)
+        missing: list[str] = []
+        manual_selection = False
+        for recommendation in self._driver_recommendations:
+            packages = recommendation.packages
+            missing.extend(package for package in packages if package not in installed)
+            complete = bool(packages) and all(package in installed for package in packages)
+            manual_selection = manual_selection or not packages
+            row = Adw.ActionRow(title=GLib.markup_escape_text(recommendation.category))
+            row.set_subtitle(
+                GLib.markup_escape_text(
+                    f"{recommendation.hardware}\n"
+                    + (
+                        f"Recommended: {', '.join(packages)}"
+                        if packages
+                        else "This GPU generation needs a driver selected according to the ArchWiki."
+                    )
+                )
+            )
+            state = Gtk.Label(
+                label=(
+                    "Installed"
+                    if complete
+                    else "Manual review"
+                    if not packages
+                    else "Action available"
+                )
+            )
+            state.add_css_class("success" if complete else "accent")
+            row.add_suffix(state)
+            self.driver_list.append(row)
+        self._driver_packages = list(dict.fromkeys(missing))
+        if not self._driver_recommendations:
+            self.driver_list.append(
+                Adw.ActionRow(
+                    title="No supported hardware profile detected",
+                    subtitle="The kernel may already provide the required driver.",
+                )
+            )
+        if self._driver_packages:
+            message = f"{len(self._driver_packages)} recommended package(s) are missing"
+            if manual_selection:
+                message += "; one device needs manual review"
+        elif manual_selection:
+            message = "One detected device needs manual driver selection"
+        else:
+            message = "Recommended driver packages are installed"
+        self.driver_status.set_text(message)
+        self._set_busy(False)
+
+    def _confirm_driver_install(self, _button: Gtk.Button) -> None:
+        packages = tuple(self._driver_packages)
+        if not packages:
+            return
+        self._confirm(
+            "Install recommended drivers?",
+            "ErgenPac detected these missing packages:\n\n"
+            + "\n".join(f"• {package}" for package in packages)
+            + "\n\nA complete system upgrade will be performed first.",
+            "Install",
+            lambda: self._run_driver_install(packages),
+        )
+
+    def _run_driver_install(self, packages: Sequence[str]) -> None:
+        self._set_busy(True)
+        self._operation_label = "Recommended drivers installed"
+        self._operation_backend = "pacman"
+        self._operation_action = "install-drivers"
+        self._cancel_requested = False
+        self._show_progress("Installing drivers")
+        self._run_streaming(driver_helper_command(packages), self._operation_finished)
 
     def _show_categories(self) -> None:
         self._clear_box(self.package_results)
@@ -289,9 +478,11 @@ class ErgenPacWindow(Adw.ApplicationWindow):
             self.update_status.set_text(f"{count} update(s) available")
         self.upgrade_button.set_sensitive(count > 0)
         for update in updates:
-            row = Adw.ActionRow(title=update.name)
+            row = Adw.ActionRow(title=GLib.markup_escape_text(update.name))
             row.set_subtitle(
-                f"{update.source}  -  {update.current_version}  ->  {update.new_version}"
+                GLib.markup_escape_text(
+                    f"{update.source}  -  {update.current_version}  ->  {update.new_version}"
+                )
             )
             self.update_list.append(row)
         if self._queued_search:
@@ -388,8 +579,8 @@ class ErgenPacWindow(Adw.ApplicationWindow):
 
     def _package_row(self, package: Package) -> Adw.ActionRow:
         row = Adw.ActionRow(
-            title=package.name,
-            subtitle=(
+            title=GLib.markup_escape_text(package.name),
+            subtitle=GLib.markup_escape_text(
                 f"{'Flatpak' if package.backend == 'flatpak' else package.repository}"
                 f"  -  {package.version}\n{package.description}"
             ),
@@ -405,7 +596,15 @@ class ErgenPacWindow(Adw.ApplicationWindow):
         if not package.installed:
             button.add_css_class("suggested-action")
         button.set_valign(Gtk.Align.CENTER)
-        button.connect("clicked", lambda _button: self._prepare_package_operation(package))
+        progress = Gtk.ProgressBar(show_text=True, text="Preparing...")
+        progress.add_css_class("inline-progress")
+        progress.set_valign(Gtk.Align.CENTER)
+        progress.set_visible(False)
+        button.connect(
+            "clicked",
+            lambda _button: self._prepare_package_operation(package, progress, button),
+        )
+        row.add_suffix(progress)
         row.add_suffix(button)
         return row
 
@@ -489,7 +688,28 @@ class ErgenPacWindow(Adw.ApplicationWindow):
             lambda: self._run_privileged("upgrade"),
         )
 
-    def _prepare_package_operation(self, package: Package) -> None:
+    def _confirm_reboot(self, _button: Gtk.Button) -> None:
+        self._confirm(
+            "Restart the system?",
+            "Save your work before continuing. The computer will restart immediately.",
+            "Restart",
+            self._reboot_system,
+        )
+
+    def _reboot_system(self) -> None:
+        self._set_busy(True)
+        self.reboot_button.set_label("Restarting...")
+        self._run_streaming(helper_command("reboot"), self._reboot_finished)
+
+    def _reboot_finished(self, status: int, output: str, error: str) -> None:
+        if status != 0:
+            self._set_busy(False)
+            self.reboot_button.set_label("Restart system")
+            self._show_result("Restart failed", friendly_error(error or output, status))
+
+    def _prepare_package_operation(
+        self, package: Package, progress: Gtk.ProgressBar, button: Gtk.Button
+    ) -> None:
         if package.backend == "flatpak":
             action = "remove-flatpak" if package.installed else "install-flatpak"
             target = package.identifier
@@ -498,6 +718,8 @@ class ErgenPacWindow(Adw.ApplicationWindow):
                 target,
                 package,
                 f"Source: {package.repository}\nDependencies will be resolved automatically.",
+                progress,
+                button,
             )
             return
         action = "remove" if package.installed else "install"
@@ -507,7 +729,7 @@ class ErgenPacWindow(Adw.ApplicationWindow):
         self._run(
             ["pacman", operation, "--print-format", "%n\t%s", package.name],
             lambda status, output, error: self._preview_loaded(
-                action, package.name, package, status, output, error
+                action, package.name, package, progress, button, status, output, error
             ),
         )
 
@@ -516,6 +738,8 @@ class ErgenPacWindow(Adw.ApplicationWindow):
         action: str,
         target: str,
         package: Package,
+        progress: Gtk.ProgressBar,
+        button: Gtk.Button,
         status: int,
         output: str,
         _error: str,
@@ -528,10 +752,16 @@ class ErgenPacWindow(Adw.ApplicationWindow):
             summary += f"\nPackages affected: {count}\n{label}: {format_size(size)}"
         else:
             summary += "\nDependencies will be resolved automatically."
-        self._confirm_package(action, target, package, summary)
+        self._confirm_package(action, target, package, summary, progress, button)
 
     def _confirm_package(
-        self, action: str, target: str, package: Package, summary: str
+        self,
+        action: str,
+        target: str,
+        package: Package,
+        summary: str,
+        progress: Gtk.ProgressBar,
+        button: Gtk.Button,
     ) -> None:
         verb = "Install" if action.startswith("install") else "Remove"
         detail = (
@@ -547,6 +777,8 @@ class ErgenPacWindow(Adw.ApplicationWindow):
                 action,
                 target,
                 f"{package.name} {'installed' if verb == 'Install' else 'removed'}",
+                progress,
+                button,
             ),
         )
 
@@ -563,15 +795,29 @@ class ErgenPacWindow(Adw.ApplicationWindow):
         dialog.present()
 
     def _run_privileged(
-        self, action: str, package: str | None = None, result_label: str = "Operation completed"
+        self,
+        action: str,
+        package: str | None = None,
+        result_label: str = "Operation completed",
+        inline_progress: Gtk.ProgressBar | None = None,
+        inline_button: Gtk.Button | None = None,
     ) -> None:
         self._set_busy(True)
         self._operation_label = result_label
         self._operation_backend = "flatpak" if "flatpak" in action else "pacman"
         self._operation_action = action
         self._cancel_requested = False
+        self._inline_progress = inline_progress
+        self._inline_button = inline_button
+        if inline_progress is not None:
+            inline_progress.set_fraction(0.0)
+            inline_progress.set_text("Preparing...")
+            inline_progress.set_visible(True)
+        if inline_button is not None:
+            inline_button.set_visible(False)
         self.update_status.set_text("Applying changes...")
-        self._show_progress("Installing updates" if action == "upgrade" else "Applying changes")
+        if inline_progress is None:
+            self._show_progress("Installing updates" if action == "upgrade" else "Applying changes")
         self._run_streaming(helper_command(action, package), self._operation_finished)
 
     def _operation_finished(self, status: int, output: str, error: str) -> None:
@@ -579,9 +825,14 @@ class ErgenPacWindow(Adw.ApplicationWindow):
         self._set_busy(False)
         if status == 0:
             result = "The software state was refreshed successfully."
-            if self._operation_action == "upgrade" and reboot_recommended(self._updates):
-                result += "\n\nA restart is recommended to finish applying system updates."
+            if self._operation_action == "upgrade":
+                self.reboot_box.set_visible(True)
+                if reboot_recommended(self._updates):
+                    result += "\n\nA restart is recommended to finish applying system updates."
             self._show_result(self._operation_label, result)
+            if self._operation_action == "install-drivers":
+                GLib.idle_add(self._scan_drivers)
+                return
             self._clear_box(self.installed_results)
             if self.software_stack.get_visible_child_name() == "installed":
                 self._load_installed_apps()
@@ -627,8 +878,20 @@ class ErgenPacWindow(Adw.ApplicationWindow):
         self._progress_transfer_identifier = None
 
     def _progress_line(self, line: str) -> None:
-        if self._progress_bar is None:
+        progress_bars = [
+            bar for bar in (self._progress_bar, self._inline_progress) if bar is not None
+        ]
+        if not progress_bars:
             return
+
+        def update_progress(*, fraction: float | None = None, text: str) -> None:
+            for bar in progress_bars:
+                if fraction is None:
+                    bar.pulse()
+                else:
+                    bar.set_fraction(fraction)
+                bar.set_text(text)
+
         clean = line.strip()
         if not clean:
             return
@@ -640,8 +903,7 @@ class ErgenPacWindow(Adw.ApplicationWindow):
             self._progress_completed_bytes = 0
             self._progress_current_bytes = 0
             self._progress_transfer_identifier = None
-            self._progress_bar.set_fraction(0.0)
-            self._progress_bar.set_text("0%")
+            update_progress(fraction=0.0, text="0%")
             return
         fraction, speed = parse_progress(clean)
         transferred = parse_transferred_size(clean)
@@ -659,14 +921,11 @@ class ErgenPacWindow(Adw.ApplicationWindow):
                     1.0,
                     (self._progress_completed_bytes + transferred) / self._progress_total_bytes,
                 )
-                self._progress_bar.set_fraction(overall)
-                self._progress_bar.set_text(f"{round(overall * 100)}%")
+                update_progress(fraction=overall, text=f"{round(overall * 100)}%")
             else:
-                self._progress_bar.pulse()
-                self._progress_bar.set_text("Downloading...")
+                update_progress(text="Downloading...")
         elif fraction is not None and self._operation_backend == "flatpak":
-            self._progress_bar.set_fraction(fraction)
-            self._progress_bar.set_text(f"{round(fraction * 100)}%")
+            update_progress(fraction=fraction, text=f"{round(fraction * 100)}%")
         if self._progress_detail is not None and speed:
             self._progress_detail.set_text(f"Speed: {speed}")
 
@@ -678,6 +937,12 @@ class ErgenPacWindow(Adw.ApplicationWindow):
         self._progress_detail = None
         self._cancel_button = None
         self._active_process = None
+        if self._inline_progress is not None:
+            self._inline_progress.set_visible(False)
+        if self._inline_button is not None:
+            self._inline_button.set_visible(True)
+        self._inline_progress = None
+        self._inline_button = None
 
     def _cancel_operation(self, _button: Gtk.Button) -> None:
         process = self._active_process
@@ -700,6 +965,9 @@ class ErgenPacWindow(Adw.ApplicationWindow):
         self.installed_button.set_sensitive(not busy)
         self.installed_refresh_button.set_sensitive(not busy)
         self.upgrade_button.set_sensitive(not busy and bool(self._updates))
+        self.driver_scan_button.set_sensitive(not busy)
+        self.driver_install_button.set_sensitive(not busy and bool(self._driver_packages))
+        self.reboot_button.set_sensitive(not busy)
 
     def _run(self, arguments: Sequence[str], callback: CommandCallback) -> None:
         launcher = Gio.SubprocessLauncher(
@@ -812,3 +1080,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+    driver_helper_command,

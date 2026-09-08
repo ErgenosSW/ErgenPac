@@ -3,6 +3,7 @@ from unittest import TestCase
 from ergenpac.core import (
     Package,
     Update,
+    driver_helper_command,
     helper_command,
     parse_flatpak_search,
     parse_flatpak_installed,
@@ -18,6 +19,7 @@ from ergenpac.core import (
     friendly_error,
     format_size,
     reboot_recommended,
+    recommend_drivers,
     validate_package_name,
     sort_packages,
 )
@@ -101,6 +103,48 @@ class CommandTests(TestCase):
                 "net.lutris.Lutris",
             ],
         )
+
+    def test_driver_install_accepts_only_known_packages(self) -> None:
+        self.assertEqual(
+            driver_helper_command(["intel-ucode", "vulkan-intel"]),
+            [
+                "pkexec", "/usr/lib/ergenpac/ergenpac-helper", "install-drivers",
+                "intel-ucode", "vulkan-intel",
+            ],
+        )
+        with self.assertRaises(ValueError):
+            driver_helper_command(["definitely-not-a-driver"])
+
+
+class DriverRecommendationTests(TestCase):
+    def test_intel_cpu_and_graphics_are_detected(self) -> None:
+        recommendations = recommend_drivers(
+            "00:02.0 VGA compatible controller: Intel Corporation UHD Graphics 620\n",
+            "vendor_id\t: GenuineIntel\n",
+            multilib=True,
+        )
+        packages = {package for item in recommendations for package in item.packages}
+        self.assertIn("intel-ucode", packages)
+        self.assertIn("vulkan-intel", packages)
+        self.assertIn("lib32-vulkan-intel", packages)
+
+    def test_modern_nvidia_uses_official_open_dkms_driver(self) -> None:
+        recommendations = recommend_drivers(
+            "01:00.0 3D controller: NVIDIA Corporation GeForce RTX 4060 Mobile\n",
+            "vendor_id\t: GenuineIntel\n",
+            multilib=False,
+        )
+        graphics = [item for item in recommendations if "NVIDIA" in item.category][0]
+        self.assertIn("nvidia-open-dkms", graphics.packages)
+
+    def test_unknown_nvidia_generation_requires_manual_selection(self) -> None:
+        recommendations = recommend_drivers(
+            "01:00.0 VGA compatible controller: NVIDIA Corporation Device 1380\n",
+            "vendor_id\t: GenuineIntel\n",
+            multilib=False,
+        )
+        graphics = [item for item in recommendations if "NVIDIA" in item.category][0]
+        self.assertEqual(graphics.packages, ())
 
 
 class PresentationTests(TestCase):
