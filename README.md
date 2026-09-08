@@ -1,6 +1,12 @@
-# ErgenPac
+<p align="center">
+  <img src="assets/ergenpac-logo.png" alt="ErgenPac logo" width="420">
+</p>
 
-ErgenPac is the graphical package manager and system updater for ErgenOS.
+<h1 align="center">ErgenPac</h1>
+
+<p align="center">
+  Graphical package manager and system updater for ErgenOS.
+</p>
 
 The first release focuses on complete system updates, package search, installation and removal. Installing software always includes a full database refresh and system upgrade, preventing unsupported partial upgrades.
 
