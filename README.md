@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/ergenpac-logo.png" alt="ErgenPac logo" width="420">
+  <img src="assets/ergenpac-logo.png?v=2" alt="ErgenPac logo" width="420">
 </p>
 
 <h1 align="center">ErgenPac</h1>

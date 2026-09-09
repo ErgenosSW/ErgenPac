@@ -19,6 +19,9 @@
     <category>PackageManager</category>
   </categories>
   <releases>
+    <release version="0.2.1" date="2026-09-10">
+      <description><p>Restore the current ErgenPac application icon and refresh the project logo displayed on GitHub.</p></description>
+    </release>
     <release version="0.2.0" date="2026-09-09">
       <description><p>Add Driver Manager, inline installation progress, post-update restart controls and a refreshed interface.</p></description>
     </release>

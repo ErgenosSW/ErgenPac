@@ -1,4 +1,4 @@
-project('ergenpac', version: '0.2.0', meson_version: '>=1.3.0')
+project('ergenpac', version: '0.2.1', meson_version: '>=1.3.0')
 
 python = import('python').find_installation('python3')
 
