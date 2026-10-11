@@ -137,6 +137,66 @@ class DriverRecommendationTests(TestCase):
         graphics = [item for item in recommendations if "NVIDIA" in item.category][0]
         self.assertIn("nvidia-open-dkms", graphics.packages)
 
+    def test_amd_nvidia_laptop_uses_one_complete_hybrid_profile(self) -> None:
+        recommendations = recommend_drivers(
+            "04:00.0 VGA compatible controller [0300]: Advanced Micro Devices, Inc. "
+            "Radeon 860M [1002:150e]\n"
+            "01:00.0 3D controller [0302]: NVIDIA Corporation GeForce RTX 5050 "
+            "Laptop GPU [10de:2d98]\n",
+            "vendor_id\t: AuthenticAMD\n",
+            multilib=True,
+        )
+
+        graphics = [item for item in recommendations if "graphics" in item.category.casefold()]
+        self.assertEqual(len(graphics), 1)
+        self.assertEqual(graphics[0].category, "Hybrid graphics — AMD + NVIDIA")
+        self.assertIn("Radeon 860M", graphics[0].hardware)
+        self.assertIn("RTX 5050", graphics[0].hardware)
+        self.assertEqual(len(graphics[0].packages), len(set(graphics[0].packages)))
+        self.assertTrue(
+            {
+                "linux-firmware",
+                "mesa",
+                "vulkan-radeon",
+                "lib32-mesa",
+                "lib32-vulkan-radeon",
+                "linux-zen-headers",
+                "nvidia-open-dkms",
+                "nvidia-utils",
+                "nvidia-settings",
+                "lib32-nvidia-utils",
+                "switcheroo-control",
+            }.issubset(graphics[0].packages)
+        )
+
+    def test_unresolved_rtx_5050_pci_ids_are_recognized_as_blackwell(self) -> None:
+        for device_id in ("2d98", "2dd8"):
+            with self.subTest(device_id=device_id):
+                recommendations = recommend_drivers(
+                    f"01:00.0 3D controller [0302]: NVIDIA Corporation Device {device_id} "
+                    f"[10de:{device_id}]\n",
+                    "vendor_id\t: AuthenticAMD\n",
+                    multilib=False,
+                )
+                graphics = next(
+                    item for item in recommendations if "NVIDIA" in item.category
+                )
+                self.assertIn("nvidia-open-dkms", graphics.packages)
+
+    def test_unknown_nvidia_device_does_not_create_unsafe_hybrid_profile(self) -> None:
+        recommendations = recommend_drivers(
+            "04:00.0 VGA compatible controller: Advanced Micro Devices, Inc. Radeon Graphics\n"
+            "01:00.0 3D controller: NVIDIA Corporation Device 1380\n",
+            "vendor_id\t: AuthenticAMD\n",
+            multilib=True,
+        )
+
+        self.assertFalse(any("Hybrid" in item.category for item in recommendations))
+        manual = next(item for item in recommendations if "manual" in item.category)
+        self.assertEqual(manual.packages, ())
+        amd = next(item for item in recommendations if item.category == "Graphics")
+        self.assertNotIn("switcheroo-control", amd.packages)
+
     def test_unknown_nvidia_generation_requires_manual_selection(self) -> None:
         recommendations = recommend_drivers(
             "01:00.0 VGA compatible controller: NVIDIA Corporation Device 1380\n",

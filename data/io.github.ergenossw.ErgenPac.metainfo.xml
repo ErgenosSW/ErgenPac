@@ -19,6 +19,9 @@
     <category>PackageManager</category>
   </categories>
   <releases>
+    <release version="0.2.2" date="2026-10-11">
+      <description><p>Add complete AMD/Intel plus NVIDIA hybrid-laptop driver profiles, RTX 5050 Laptop PCI identification and automatic switcheroo-control activation.</p></description>
+    </release>
     <release version="0.2.1" date="2026-09-10">
       <description><p>Restore the current ErgenPac application icon and refresh the project logo displayed on GitHub.</p></description>
     </release>

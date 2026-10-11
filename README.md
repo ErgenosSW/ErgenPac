@@ -15,7 +15,8 @@ ErgenPac separates configured pacman repositories and Flathub results, shows use
 ## Features
 
 - Combined pacman and Flatpak update view
-- Hardware-aware Driver Manager for processor microcode and Intel, AMD or supported NVIDIA graphics
+- Hardware-aware Driver Manager for processor microcode, individual GPUs and
+  complete AMD/Intel + NVIDIA hybrid laptop profiles
 - Live search with exact-match ranking and category shortcuts
 - Installed application view without core system package noise
 - Transaction summary before package installation or removal
@@ -31,6 +32,10 @@ official `nvidia-open-dkms` stack. Unknown or legacy NVIDIA generations are
 flagged for manual review instead of receiving a potentially incompatible
 driver. On systems configured with ErgenOS Secure Boot, DKMS driver
 installation refreshes the signed boot components automatically.
+Hybrid laptop profiles install the Mesa/Vulkan stack for the integrated GPU,
+the official NVIDIA open DKMS stack for the discrete GPU, required 32-bit
+gaming libraries when multilib is enabled, and `switcheroo-control` for desktop
+GPU offloading.
 
 ## Development
 

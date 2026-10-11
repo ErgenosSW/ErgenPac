@@ -58,9 +58,41 @@ DRIVER_PACKAGES = frozenset({
     "nvidia-open-dkms",
     "nvidia-settings",
     "nvidia-utils",
+    "switcheroo-control",
     "vulkan-intel",
     "vulkan-radeon",
 })
+
+
+def _is_modern_nvidia(line: str) -> bool:
+    """Return whether the NVIDIA Open GPU Kernel Modules support the device."""
+    return bool(
+        re.search(
+            r"\bRTX\b|\bGTX\s*16\d\d\b|\b(?:TU|GA|AD|GB)\d{3}\b|"
+            r"(?:\[10de:|\bDevice\s+)(?:2d98|2dd8)\b",
+            line,
+            re.IGNORECASE,
+        )
+    )
+
+
+def _integrated_graphics_packages(vendor: str, *, multilib: bool) -> list[str]:
+    packages = ["mesa", f"vulkan-{vendor}"]
+    if multilib:
+        packages.extend(("lib32-mesa", f"lib32-vulkan-{vendor}"))
+    return packages
+
+
+def _nvidia_packages(*, multilib: bool) -> list[str]:
+    packages = [
+        "linux-zen-headers",
+        "nvidia-open-dkms",
+        "nvidia-utils",
+        "nvidia-settings",
+    ]
+    if multilib:
+        packages.append("lib32-nvidia-utils")
+    return packages
 
 
 def recommend_drivers(
@@ -82,21 +114,39 @@ def recommend_drivers(
         line.strip() for line in pci_output.splitlines()
         if re.search(r"\b(VGA compatible controller|3D controller|Display controller)\b", line)
     ]
+    amd_lines = [
+        line for line in gpu_lines
+        if "amd" in line.casefold()
+        or "advanced micro devices" in line.casefold()
+        or re.search(r"\bATI\b", line, re.IGNORECASE)
+    ]
+    intel_lines = [line for line in gpu_lines if "intel" in line.casefold()]
+    nvidia_lines = [line for line in gpu_lines if "nvidia" in line.casefold()]
+    supported_nvidia = [line for line in nvidia_lines if _is_modern_nvidia(line)]
+
+    integrated_vendor = "radeon" if amd_lines else "intel" if intel_lines else None
+    integrated_lines = amd_lines or intel_lines
+    if integrated_vendor and integrated_lines and supported_nvidia:
+        packages = ["linux-firmware"]
+        packages.extend(_integrated_graphics_packages(integrated_vendor, multilib=multilib))
+        packages.extend(_nvidia_packages(multilib=multilib))
+        packages.append("switcheroo-control")
+        vendor_name = "AMD + NVIDIA" if integrated_vendor == "radeon" else "Intel + NVIDIA"
+        recommendations.append(
+            DriverRecommendation(
+                f"Hybrid graphics — {vendor_name}",
+                "\n".join((*integrated_lines, *supported_nvidia)),
+                tuple(dict.fromkeys(packages)),
+            )
+        )
+
     for line in gpu_lines:
         lowered = line.casefold()
         if "nvidia" in lowered:
-            modern_nvidia = re.search(
-                r"\bRTX\b|\bGTX\s*16\d\d\b|\b(?:TU|GA|AD|GB)\d{3}\b",
-                line,
-                re.IGNORECASE,
-            )
-            if modern_nvidia:
-                packages = [
-                    "linux-zen-headers", "nvidia-open-dkms", "nvidia-utils",
-                    "nvidia-settings",
-                ]
-                if multilib:
-                    packages.append("lib32-nvidia-utils")
+            if line in supported_nvidia:
+                if integrated_vendor:
+                    continue
+                packages = _nvidia_packages(multilib=multilib)
                 recommendations.append(
                     DriverRecommendation("NVIDIA graphics", line, tuple(packages))
                 )
@@ -111,14 +161,14 @@ def recommend_drivers(
             or "advanced micro devices" in lowered
             or re.search(r"\bATI\b", line, re.IGNORECASE)
         ):
-            packages = ["mesa", "vulkan-radeon"]
-            if multilib:
-                packages.extend(("lib32-mesa", "lib32-vulkan-radeon"))
+            if supported_nvidia:
+                continue
+            packages = _integrated_graphics_packages("radeon", multilib=multilib)
             recommendations.append(DriverRecommendation("Graphics", line, tuple(packages)))
         elif "intel" in lowered:
-            packages = ["mesa", "vulkan-intel"]
-            if multilib:
-                packages.extend(("lib32-mesa", "lib32-vulkan-intel"))
+            if supported_nvidia:
+                continue
+            packages = _integrated_graphics_packages("intel", multilib=multilib)
             recommendations.append(DriverRecommendation("Graphics", line, tuple(packages)))
     return recommendations
 

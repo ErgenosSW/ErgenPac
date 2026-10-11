@@ -16,7 +16,7 @@ DRIVER_PACKAGES = frozenset({
     "lib32-vulkan-intel", "lib32-vulkan-radeon", "linux-firmware",
     "linux-zen-headers", "mesa",
     "nvidia-open-dkms", "nvidia-settings", "nvidia-utils", "vulkan-intel",
-    "vulkan-radeon",
+    "vulkan-radeon", "switcheroo-control",
 })
 
 
@@ -63,6 +63,20 @@ def command(arguments: list[str]) -> list[str]:
     raise ValueError("invalid operation")
 
 
+def driver_post_install_commands(packages: list[str]) -> list[list[str]]:
+    commands: list[list[str]] = []
+    if "switcheroo-control" in packages:
+        commands.append(
+            [
+                "/usr/bin/systemctl",
+                "enable",
+                "--now",
+                "switcheroo-control.service",
+            ]
+        )
+    return commands
+
+
 def main() -> int:
     try:
         requested = command(sys.argv[1:])
@@ -83,6 +97,10 @@ def main() -> int:
         result = subprocess.run(requested, check=False)
         if result.returncode != 0:
             return result.returncode
+        for post_install_command in driver_post_install_commands(sys.argv[2:]):
+            result = subprocess.run(post_install_command, check=False)
+            if result.returncode != 0:
+                return result.returncode
         secure_boot_tool = "/usr/bin/ergenos-secureboot"
         if os.path.isfile(secure_boot_tool) and os.access(secure_boot_tool, os.X_OK):
             return subprocess.run(
