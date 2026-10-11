@@ -8,7 +8,10 @@
   Graphical package manager and system updater for ErgenOS.
 </p>
 
-The first release focuses on complete system updates, package search, installation and removal. Installing software always includes a full database refresh and system upgrade, preventing unsupported partial upgrades.
+The current version is **1.0.1**, included in the validated ErgenOS 1.2 image.
+Native package installation includes a full database refresh and system upgrade.
+Flatpak installation uses its own runtime and does not perform a Pacman upgrade.
+See [CHANGELOG.md](CHANGELOG.md) for the release history.
 
 ErgenPac separates configured pacman repositories and Flathub results, shows user-facing installed applications, reports live operation progress with download speed, and refreshes package state automatically without blanking the current results. Third-party repositories configured in pacman, including Chaotic-AUR, are searched automatically.
 
