@@ -20,6 +20,8 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 
+from .gaming import GAMING_TOOLS, GamingTool, gaming_tool, missing_packages
+
 from .core import (
     DriverRecommendation,
     Package,
@@ -126,13 +128,16 @@ class ErgenPacWindow(Adw.ApplicationWindow):
         )
         self.stack.set_hexpand(True)
         self.stack.set_vexpand(True)
+        self._navigation_buttons = {}
         nav_group: Gtk.ToggleButton | None = None
         for name, label, icon_name in (
             ("updates", "Updates", "software-update-available-symbolic"),
             ("software", "Software", "system-software-install-symbolic"),
             ("drivers", "Driver Manager", "preferences-system-symbolic"),
+            ("gaming", "Gaming", "input-gaming-symbolic"),
         ):
             button = self._navigation_button(label, icon_name)
+            self._navigation_buttons[name] = button
             if nav_group is None:
                 nav_group = button
                 button.set_active(True)
@@ -150,6 +155,7 @@ class ErgenPacWindow(Adw.ApplicationWindow):
         self.stack.add_named(self._build_updates_page(), "updates")
         self.stack.add_named(self._build_software_page(), "software")
         self.stack.add_named(self._build_drivers_page(), "drivers")
+        self.stack.add_named(self._build_gaming_page(), "gaming")
         self.stack.set_visible_child_name("updates")
         GLib.idle_add(self.check_updates)
 
@@ -168,6 +174,8 @@ class ErgenPacWindow(Adw.ApplicationWindow):
     def _navigation_changed(self, button: Gtk.ToggleButton, page: str) -> None:
         if button.get_active():
             self.stack.set_visible_child_name(page)
+            if page == "gaming" and hasattr(self, "gaming_list"):
+                self._refresh_gaming()
 
     def _install_styles(self) -> None:
         Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.PREFER_DARK)
@@ -401,6 +409,115 @@ class ErgenPacWindow(Adw.ApplicationWindow):
         self.software_stack.add_named(installed, "installed")
         page.append(self.software_stack)
         return page
+
+    def _build_gaming_page(self) -> Gtk.Widget:
+        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
+        for setter in (page.set_margin_top, page.set_margin_bottom,
+                       page.set_margin_start, page.set_margin_end):
+            setter(24)
+        page.add_css_class("ergen-page")
+        page.append(self._page_hero(
+            "PLAY · YOUR WAY", "Gaming",
+            "Choose your launchers and tools. Install only what you need.",
+        ))
+        controls = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        controls.add_css_class("ergen-toolbar")
+        self.gaming_status = Gtk.Label(label="Refresh to check installed tools", xalign=0, hexpand=True)
+        self.gaming_status.set_wrap(True)
+        controls.append(self.gaming_status)
+        self.gaming_refresh = Gtk.Button(label="Refresh")
+        self.gaming_refresh.connect("clicked", lambda _button: self._refresh_gaming())
+        controls.append(self.gaming_refresh)
+        drivers = Gtk.Button(label="Driver Manager")
+        drivers.connect("clicked", lambda _button: self._navigation_buttons["drivers"].set_active(True))
+        controls.append(drivers)
+        page.append(controls)
+        note = Gtk.Label(
+            label="Set up graphics drivers before playing. Tools are enabled per game. "
+                  "MangoHud and Gamescope installed here are native tools; Flatpak games need runtime-specific integration.",
+            xalign=0, wrap=True,
+        )
+        note.add_css_class("dim-label")
+        page.append(note)
+        scroll = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, vexpand=True)
+        self.gaming_list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
+        self.gaming_list.add_css_class("boxed-list")
+        scroll.set_child(self.gaming_list)
+        page.append(scroll)
+        return page
+
+    def _refresh_gaming(self) -> None:
+        if self._busy:
+            return
+        self._set_busy(True)
+        self.gaming_status.set_text("Checking gaming tools...")
+        self._run(["pacman", "-Qq"], self._gaming_native_loaded)
+
+    def _gaming_native_loaded(self, status: int, output: str, error: str) -> None:
+        if status != 0:
+            self._clear_list(self.gaming_list)
+            self.gaming_status.set_text("Could not read installed packages. Try Refresh again.")
+            self._set_busy(False)
+            return
+        self._gaming_native = set(output.splitlines())
+        self._run(["pacman", "-Sl"], self._gaming_available_loaded)
+
+    def _gaming_available_loaded(self, status: int, output: str, error: str) -> None:
+        self._gaming_available = {
+            fields[1] for line in output.splitlines()
+            if len(fields := line.split()) >= 3
+        } if status == 0 else set()
+        self._run(["flatpak", "list", "--system", "--app", "--columns=application"],
+                  self._gaming_flatpaks_loaded)
+
+    def _gaming_flatpaks_loaded(self, status: int, output: str, error: str) -> None:
+        self._gaming_flatpaks = set(output.splitlines()) if status == 0 else None
+        self._run(["flatpak", "remotes", "--system", "--columns=name,options"],
+                  self._gaming_remotes_loaded)
+
+    def _gaming_remotes_loaded(self, status: int, output: str, error: str) -> None:
+        flathub = status == 0 and any(
+            line.split() and line.split()[0] == "flathub" and "disabled" not in line
+            for line in output.splitlines()
+        )
+        self._clear_list(self.gaming_list)
+        for tool in GAMING_TOOLS:
+            native = tool.backend == "pacman"
+            installed = self._gaming_native if native else self._gaming_flatpaks
+            missing = missing_packages(tool, installed or set())
+            ready = installed is not None and not missing
+            available = (all(p in self._gaming_available for p in missing) if native
+                         else flathub and installed is not None)
+            source = "System repositories" if native else "Flathub · system installation"
+            row = Adw.ActionRow(title=tool.name, subtitle=GLib.markup_escape_text(
+                f"{tool.description}\n{source}\n{tool.hint}"
+            ))
+            row.set_subtitle_lines(0)
+            button = Gtk.Button(label="Installed" if ready else "Install" if available else "Unavailable")
+            button.set_sensitive(not ready and available)
+            button.set_valign(Gtk.Align.CENTER)
+            if not ready and available:
+                button.add_css_class("suggested-action")
+                button.connect("clicked", lambda _button, selected=tool: self._confirm_gaming(selected))
+            if not ready and not available:
+                button.set_tooltip_text("Check repositories and multilib, then refresh." if native
+                                        else "Enable the system Flathub remote, then refresh.")
+            row.add_suffix(button)
+            self.gaming_list.append(row)
+        self.gaming_status.set_text("Optional tools · nothing is installed automatically")
+        self._set_busy(False)
+
+    def _confirm_gaming(self, tool: GamingTool) -> None:
+        if self._busy:
+            return
+        detail = ("This installs the selected tools and updates the complete system."
+                  if tool.backend == "pacman" else "This installs the application and its Flatpak runtime from Flathub.")
+        self._confirm(
+            f"Install {tool.name}?",
+            f"{detail}\n\nPackages: {', '.join(tool.packages)}\n\n{tool.hint}",
+            "Install",
+            lambda: self._run_privileged("install-gaming", tool.id, f"{tool.name} installed"),
+        )
 
     def _build_drivers_page(self) -> Gtk.Widget:
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
@@ -957,7 +1074,8 @@ class ErgenPacWindow(Adw.ApplicationWindow):
     ) -> None:
         self._set_busy(True)
         self._operation_label = result_label
-        self._operation_backend = "flatpak" if "flatpak" in action else "pacman"
+        self._operation_backend = (gaming_tool(package).backend if action == "install-gaming"
+                                   else "flatpak" if "flatpak" in action else "pacman")
         self._operation_action = action
         self._cancel_requested = False
         self._inline_progress = inline_progress
@@ -976,7 +1094,9 @@ class ErgenPacWindow(Adw.ApplicationWindow):
     def _operation_finished(self, status: int, output: str, error: str) -> None:
         self._hide_progress()
         if status == 0:
-            if self._operation_action == "upgrade":
+            if self._operation_action == "upgrade" or (
+                self._operation_action == "install-gaming" and self._operation_backend == "pacman"
+            ):
                 self._set_busy(True)
                 self.update_status.set_text("Verifying the updated system...")
                 self._run(helper_command("verify-update"), self._update_verification_finished)
@@ -986,6 +1106,8 @@ class ErgenPacWindow(Adw.ApplicationWindow):
             self._set_busy(False)
             effective_status = 130 if self._cancel_requested else status
             self._show_result("Operation failed", friendly_error(error or output, effective_status))
+            if self._operation_action == "install-gaming":
+                GLib.idle_add(self._refresh_gaming)
 
     def _update_verification_finished(self, status: int, output: str, error: str) -> None:
         try:
@@ -1013,6 +1135,9 @@ class ErgenPacWindow(Adw.ApplicationWindow):
             GLib.idle_add(self._scan_drivers)
             return
         self._clear_box(self.installed_results)
+        if self._operation_action == "install-gaming":
+            GLib.idle_add(self._refresh_gaming)
+            return
         if self.software_stack.get_visible_child_name() == "installed":
             self._load_installed_apps()
         elif len(self.search.get_text().strip()) >= 2:
@@ -1135,6 +1260,8 @@ class ErgenPacWindow(Adw.ApplicationWindow):
 
     def _set_busy(self, busy: bool) -> None:
         self._busy = busy
+        self.gaming_refresh.set_sensitive(not busy)
+        self.gaming_list.set_sensitive(not busy)
         self.refresh_button.set_sensitive(not busy)
         self.search.set_sensitive(not busy)
         self.explore_button.set_sensitive(not busy)

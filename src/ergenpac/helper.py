@@ -10,6 +10,9 @@ import subprocess
 import sys
 
 
+from ergenpac.gaming import gaming_install_command
+
+
 PACKAGE_NAME = re.compile(r"^[A-Za-z0-9@._+:-]+$")
 DRIVER_PACKAGES = frozenset({
     "amd-ucode", "intel-ucode", "lib32-mesa", "lib32-nvidia-utils",
@@ -21,6 +24,8 @@ DRIVER_PACKAGES = frozenset({
 
 
 def command(arguments: list[str]) -> list[str]:
+    if len(arguments) == 2 and arguments[0] == "install-gaming":
+        return gaming_install_command(arguments[1])
     if arguments == ["upgrade"]:
         return ["/usr/bin/pacman", "-Syu", "--noconfirm"]
     if len(arguments) == 2 and arguments[0] in {"install", "remove"}:

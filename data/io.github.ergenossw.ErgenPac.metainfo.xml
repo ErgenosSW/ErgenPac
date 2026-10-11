@@ -19,6 +19,9 @@
     <category>PackageManager</category>
   </categories>
   <releases>
+    <release version="1.0.0" date="2026-10-11">
+      <description><p>Adds optional gaming launchers and tools, installation status, usage hints and system verification after native gaming installations.</p></description>
+    </release>
     <release version="0.2.4" date="2026-10-11">
       <description><p>Refreshes the interface with a unified ErgenOS website and Wiki inspired visual system.</p></description>
     </release>

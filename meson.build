@@ -1,4 +1,4 @@
-project('ergenpac', version: '0.2.4', meson_version: '>=1.3.0')
+project('ergenpac', version: '1.0.0', meson_version: '>=1.3.0')
 
 python = import('python').find_installation('python3')
 
@@ -7,6 +7,7 @@ python.install_sources(
     'src/ergenpac/__init__.py',
     'src/ergenpac/app.py',
     'src/ergenpac/core.py',
+    'src/ergenpac/gaming.py',
   ),
   subdir: 'ergenpac',
 )

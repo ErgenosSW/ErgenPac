@@ -38,6 +38,30 @@ the official NVIDIA open DKMS stack for the discrete GPU, required 32-bit
 gaming libraries when multilib is enabled, and `switcheroo-control` for desktop
 GPU offloading.
 
+## Optional gaming tools
+
+The Gaming page offers Steam, Lutris, Heroic, Faugus, GameMode, MangoHud,
+GOverlay and Gamescope. Each tool has its own install action and usage hint;
+nothing is selected or installed automatically. GameMode and MangoHud include
+32-bit libraries, and incomplete installations remain installable.
+
+Native tools use configured pacman repositories, perform a complete system
+upgrade and then run ErgenCTL verification. Heroic and Faugus use the system
+Flathub remote. The page checks installed packages and local repository metadata;
+unavailable native packages or a missing/disabled Flathub remote disable the
+corresponding install action. Refresh after changing repository configuration.
+A confirmation shows the exact targets before authentication.
+
+Configure graphics through Driver Manager first. Installing these tools does
+not enable them globally. Native MangoHud/Gamescope do not automatically configure
+Flatpak runtimes. Manage removal through Software → Installed; shared libraries
+are not automatically removed by the Gaming page. ErgenProton-WoW is not yet
+included in this catalog.
+
+Sources: [Arch packages](https://archlinux.org/packages/),
+[Heroic on Flathub](https://flathub.org/apps/com.heroicgameslauncher.hgl),
+[Faugus on Flathub](https://flathub.org/apps/io.github.Faugus.faugus-launcher).
+
 ## Development
 
 Run tests:

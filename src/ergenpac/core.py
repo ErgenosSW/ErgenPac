@@ -8,6 +8,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 
+from .gaming import gaming_tool
+
+
 PACKAGE_NAME = re.compile(r"^[A-Za-z0-9@._+:-]+$")
 REBOOT_PACKAGES = ("linux", "systemd", "glibc", "nvidia", "mesa")
 PROGRESS_PERCENT = re.compile(r"(?<!\d)(100|[1-9]?\d)%")
@@ -411,6 +414,9 @@ def validate_package_name(name: str) -> str:
 
 def helper_command(action: str, package: str | None = None) -> list[str]:
     base = ["pkexec", "/usr/lib/ergenpac/ergenpac-helper"]
+    if action == "install-gaming" and package is not None:
+        gaming_tool(package)
+        return [*base, action, package]
     if action == "upgrade" and package is None:
         return [*base, "upgrade"]
     if action == "reboot" and package is None:
