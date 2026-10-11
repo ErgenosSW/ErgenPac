@@ -10,6 +10,7 @@ import signal
 import subprocess
 import sys
 import threading
+import tempfile
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
@@ -65,6 +66,9 @@ class ErgenPacWindow(Adw.ApplicationWindow):
         self._installed_flatpaks: set[str] = set()
         self._pending_packages: list[Package] = []
         self._refresh_updates_after_search = False
+        self._gaming_refresh_pending = False
+        self._gaming_database = None
+        self._gaming_catalog_warning = ""
         self._busy = False
         self._search_timer = 0
         self._queued_search = ""
@@ -448,6 +452,7 @@ class ErgenPacWindow(Adw.ApplicationWindow):
 
     def _refresh_gaming(self) -> None:
         if self._busy:
+            self._gaming_refresh_pending = True
             return
         self._set_busy(True)
         self.gaming_status.set_text("Checking gaming tools...")
@@ -460,9 +465,28 @@ class ErgenPacWindow(Adw.ApplicationWindow):
             self._set_busy(False)
             return
         self._gaming_native = set(output.splitlines())
-        self._run(["pacman", "-Sl"], self._gaming_available_loaded)
+        self._gaming_catalog_warning = ""
+        self._gaming_database = tempfile.TemporaryDirectory(prefix="ergenpac-gaming-")
+        self.gaming_status.set_text("Refreshing gaming catalog...")
+        self._run(
+            ["env", f"CHECKUPDATES_DB={self._gaming_database.name}", "checkupdates"],
+            self._gaming_catalog_synced,
+        )
+
+    def _gaming_catalog_synced(self, status: int, output: str, error: str) -> None:
+        if status in {0, 2}:
+            self._run(["pacman", "--dbpath", self._gaming_database.name, "-Sl"],
+                      self._gaming_available_loaded)
+        else:
+            self._gaming_catalog_warning = "Could not refresh repositories; showing cached availability. Check your connection and try Refresh."
+            self._run(["pacman", "-Sl"], self._gaming_available_loaded)
 
     def _gaming_available_loaded(self, status: int, output: str, error: str) -> None:
+        if self._gaming_database is not None:
+            self._gaming_database.cleanup()
+            self._gaming_database = None
+        if status != 0:
+            self._gaming_catalog_warning = "Could not read repository availability. Check your connection and repositories, then Refresh."
         self._gaming_available = {
             fields[1] for line in output.splitlines()
             if len(fields := line.split()) >= 3
@@ -493,7 +517,7 @@ class ErgenPacWindow(Adw.ApplicationWindow):
                 f"{tool.description}\n{source}\n{tool.hint}"
             ))
             row.set_subtitle_lines(0)
-            button = Gtk.Button(label="Installed" if ready else "Install" if available else "Unavailable")
+            button = Gtk.Button(label="Installed" if ready else "Install" if available else "Not checked" if native and self._gaming_catalog_warning else "Unavailable")
             button.set_sensitive(not ready and available)
             button.set_valign(Gtk.Align.CENTER)
             if not ready and available:
@@ -504,7 +528,7 @@ class ErgenPacWindow(Adw.ApplicationWindow):
                                         else "Enable the system Flathub remote, then refresh.")
             row.add_suffix(button)
             self.gaming_list.append(row)
-        self.gaming_status.set_text("Optional tools · nothing is installed automatically")
+        self.gaming_status.set_text(self._gaming_catalog_warning or "Optional tools · nothing is installed automatically")
         self._set_busy(False)
 
     def _confirm_gaming(self, tool: GamingTool) -> None:
@@ -1260,6 +1284,9 @@ class ErgenPacWindow(Adw.ApplicationWindow):
 
     def _set_busy(self, busy: bool) -> None:
         self._busy = busy
+        if not busy and self._gaming_refresh_pending:
+            self._gaming_refresh_pending = False
+            GLib.idle_add(self._refresh_gaming)
         self.gaming_refresh.set_sensitive(not busy)
         self.gaming_list.set_sensitive(not busy)
         self.refresh_button.set_sensitive(not busy)

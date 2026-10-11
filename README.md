@@ -47,7 +47,10 @@ nothing is selected or installed automatically. GameMode and MangoHud include
 
 Native tools use configured pacman repositories, perform a complete system
 upgrade and then run ErgenCTL verification. Heroic and Faugus use the system
-Flathub remote. The page checks installed packages and local repository metadata;
+Flathub remote. The page checks installed packages and refreshes repository metadata through
+checkupdates in a private temporary database, without changing the system package
+database or requiring administrator access. Failed refreshes are shown explicitly
+and fall back to cached availability;
 unavailable native packages or a missing/disabled Flathub remote disable the
 corresponding install action. Refresh after changing repository configuration.
 A confirmation shows the exact targets before authentication.

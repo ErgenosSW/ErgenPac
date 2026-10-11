@@ -19,6 +19,9 @@
     <category>PackageManager</category>
   </categories>
   <releases>
+    <release version="1.0.1" date="2026-10-11">
+      <description><p>Refreshes Gaming availability using an isolated package database, reports offline lookup failures and includes the required checkupdates dependency.</p></description>
+    </release>
     <release version="1.0.0" date="2026-10-11">
       <description><p>Adds optional gaming launchers and tools, installation status, usage hints and system verification after native gaming installations.</p></description>
     </release>
