@@ -55,7 +55,8 @@ class ErgenPacWindow(Adw.ApplicationWindow):
     def __init__(self, application: Adw.Application) -> None:
         super().__init__(application=application)
         self.set_title("ErgenPac")
-        self.set_default_size(1040, 760)
+        self.set_default_size(1080, 780)
+        self.add_css_class("ergen-shell")
         self._updates: list[Update] = []
         self._flatpak_updates: list[Update] = []
         self._installed: set[str] = set()
@@ -87,45 +88,193 @@ class ErgenPacWindow(Adw.ApplicationWindow):
 
         toolbar = Adw.ToolbarView()
         header = Adw.HeaderBar()
-        brand_icon = Gtk.Image.new_from_icon_name(APPLICATION_ID)
-        brand_icon.set_pixel_size(32)
-        brand_icon.set_tooltip_text("ErgenPac")
-        brand_icon.set_margin_start(6)
-        brand_icon.set_margin_end(6)
-        header.pack_start(brand_icon)
+        header_brand = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=9)
+        header_brand.add_css_class("ergen-header-brand")
+        header_logo = Gtk.Image.new_from_icon_name(APPLICATION_ID)
+        header_logo.set_pixel_size(28)
+        header_brand.append(header_logo)
+        header_title = Gtk.Label(label="ErgenPac")
+        header_title.add_css_class("ergen-header-title")
+        header_brand.append(header_title)
+        header.pack_start(header_brand)
         toolbar.add_top_bar(header)
         self.set_content(toolbar)
 
-        self.stack = Adw.ViewStack()
-        switcher = Adw.ViewSwitcher(stack=self.stack, policy=Adw.ViewSwitcherPolicy.WIDE)
-        header.set_title_widget(switcher)
-        toolbar.set_content(self.stack)
+        shell = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        toolbar.set_content(shell)
 
-        self.stack.add_titled_with_icon(
-            self._build_updates_page(), "updates", "Updates", "software-update-available-symbolic"
+        navigation = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        navigation.add_css_class("ergen-navigation")
+        brand = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        brand.add_css_class("ergen-brand")
+        brand_icon = Gtk.Image.new_from_icon_name(APPLICATION_ID)
+        brand_icon.set_pixel_size(42)
+        brand.append(brand_icon)
+        brand_text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=1)
+        brand_name = Gtk.Label(label="ErgenPac", xalign=0)
+        brand_name.add_css_class("ergen-brand-name")
+        brand_text.append(brand_name)
+        brand_caption = Gtk.Label(label="ERGENOS SOFTWARE", xalign=0)
+        brand_caption.add_css_class("ergen-eyebrow")
+        brand_text.append(brand_caption)
+        brand.append(brand_text)
+        navigation.append(brand)
+
+        self.stack = Gtk.Stack(
+            transition_type=Gtk.StackTransitionType.SLIDE_UP_DOWN,
+            transition_duration=220,
         )
-        self.stack.add_titled_with_icon(
-            self._build_software_page(), "software", "Software", "system-software-install-symbolic"
-        )
-        self.stack.add_titled_with_icon(
-            self._build_drivers_page(), "drivers", "Driver Manager", "preferences-system-symbolic"
-        )
+        self.stack.set_hexpand(True)
+        self.stack.set_vexpand(True)
+        nav_group: Gtk.ToggleButton | None = None
+        for name, label, icon_name in (
+            ("updates", "Updates", "software-update-available-symbolic"),
+            ("software", "Software", "system-software-install-symbolic"),
+            ("drivers", "Driver Manager", "preferences-system-symbolic"),
+        ):
+            button = self._navigation_button(label, icon_name)
+            if nav_group is None:
+                nav_group = button
+                button.set_active(True)
+            else:
+                button.set_group(nav_group)
+            button.connect("toggled", self._navigation_changed, name)
+            navigation.append(button)
+        navigation.append(Gtk.Box(vexpand=True))
+        footer = Gtk.Label(label="ErgenOS · Safe updates", xalign=0)
+        footer.add_css_class("ergen-muted")
+        navigation.append(footer)
+        shell.append(navigation)
+        shell.append(self.stack)
+
+        self.stack.add_named(self._build_updates_page(), "updates")
+        self.stack.add_named(self._build_software_page(), "software")
+        self.stack.add_named(self._build_drivers_page(), "drivers")
+        self.stack.set_visible_child_name("updates")
         GLib.idle_add(self.check_updates)
 
+    @staticmethod
+    def _navigation_button(label: str, icon_name: str) -> Gtk.ToggleButton:
+        button = Gtk.ToggleButton()
+        button.add_css_class("ergen-nav-button")
+        content = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        content.append(Gtk.Image.new_from_icon_name(icon_name))
+        text = Gtk.Label(label=label, xalign=0)
+        text.set_hexpand(True)
+        content.append(text)
+        button.set_child(content)
+        return button
+
+    def _navigation_changed(self, button: Gtk.ToggleButton, page: str) -> None:
+        if button.get_active():
+            self.stack.set_visible_child_name(page)
+
     def _install_styles(self) -> None:
+        Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.PREFER_DARK)
         provider = Gtk.CssProvider()
         provider.load_from_data(b"""
-          window { background: @window_bg_color; }
-          headerbar { background: @headerbar_bg_color; }
-          .ergen-page { padding: 30px; }
-          .ergen-hero { padding: 18px 22px; border-radius: 16px; background: alpha(@accent_bg_color, 0.12); }
-          .ergen-card { border-radius: 14px; }
+          window.ergen-shell {
+            background: linear-gradient(145deg, #030a14, #071525);
+            color: #eaf3ff;
+          }
+          window.ergen-shell headerbar {
+            background: alpha(#030a14, 0.94);
+            border-bottom: 1px solid alpha(#8fbeeb, 0.16);
+            box-shadow: none;
+          }
+          .ergen-header-brand { margin-left: 4px; }
+          .ergen-header-title { color: #eaf3ff; font-size: 16px; font-weight: 800; }
+          .ergen-navigation {
+            min-width: 220px;
+            padding: 26px 18px;
+            border-right: 1px solid alpha(#8fbeeb, 0.16);
+            background: linear-gradient(165deg, #0a2744, #06111f);
+          }
+          .ergen-brand { margin: 2px 8px 26px; }
+          .ergen-brand-name { color: #f4f9ff; font-size: 21px; font-weight: 800; }
+          .ergen-nav-button {
+            min-height: 48px;
+            padding: 0 14px;
+            border: 0;
+            border-radius: 12px;
+            background: transparent;
+            color: #b9cbe0;
+          }
+          .ergen-nav-button:hover { background: alpha(#1d537c, 0.35); color: white; }
+          .ergen-nav-button:checked {
+            background: linear-gradient(135deg, alpha(#0aa7ff, 0.28), alpha(#0068ff, 0.34));
+            color: white;
+            box-shadow: inset 3px 0 #31b6ff;
+          }
+          .ergen-page { padding: 28px 32px 34px; }
+          .ergen-hero {
+            padding: 30px 34px;
+            border-radius: 24px;
+            border: 1px solid alpha(#31b6ff, 0.26);
+            background: linear-gradient(135deg, alpha(#0a2744, 0.96), alpha(#07111f, 0.96));
+            box-shadow: 0 18px 48px alpha(black, 0.28);
+          }
+          .ergen-eyebrow {
+            color: #54c3ff;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 1.5px;
+          }
+          .ergen-display { color: #f4f9ff; font-size: 28px; font-weight: 800; }
+          .ergen-muted, .dim-label { color: #9db0c8; }
+          .ergen-toolbar {
+            padding: 10px 12px;
+            border-radius: 16px;
+            border: 1px solid alpha(#8fbeeb, 0.14);
+            background: alpha(#081424, 0.82);
+          }
+          .ergen-card { border-radius: 16px; border: 1px solid alpha(#8fbeeb, 0.14); }
+          .boxed-list {
+            border: 1px solid alpha(#8fbeeb, 0.16);
+            border-radius: 16px;
+            background: alpha(#081424, 0.92);
+          }
+          row { background: transparent; }
+          searchentry { min-height: 42px; }
+          flowbox button {
+            min-width: 130px;
+            border: 1px solid alpha(#8fbeeb, 0.16);
+            border-radius: 14px;
+            background: alpha(#081424, 0.9);
+          }
+          flowbox button:hover { border-color: alpha(#31b6ff, 0.44); }
           .inline-progress { min-width: 120px; }
-          .success-action { padding: 18px; border-radius: 14px; background: alpha(@success_color, 0.12); }
+          .success-action {
+            padding: 18px;
+            border-radius: 16px;
+            border: 1px solid alpha(@success_color, 0.28);
+            background: alpha(@success_color, 0.10);
+          }
+          button.suggested-action {
+            background: linear-gradient(135deg, #0aa7ff, #0068ff);
+            color: white;
+            font-weight: 700;
+            box-shadow: 0 8px 24px alpha(#0068ff, 0.24);
+          }
         """)
         Gtk.StyleContext.add_provider_for_display(
             self.get_display(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
         )
+
+    @staticmethod
+    def _page_hero(eyebrow: str, title: str, description: str) -> Gtk.Widget:
+        hero = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=7)
+        hero.add_css_class("ergen-hero")
+        kicker = Gtk.Label(label=eyebrow, xalign=0)
+        kicker.add_css_class("ergen-eyebrow")
+        hero.append(kicker)
+        heading = Gtk.Label(label=title, xalign=0)
+        heading.add_css_class("ergen-display")
+        hero.append(heading)
+        summary = Gtk.Label(label=description, xalign=0, wrap=True)
+        summary.add_css_class("ergen-muted")
+        hero.append(summary)
+        return hero
 
     def _build_updates_page(self) -> Gtk.Widget:
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
@@ -135,11 +284,16 @@ class ErgenPacWindow(Adw.ApplicationWindow):
         page.set_margin_end(24)
         page.add_css_class("ergen-page")
 
-        title = Gtk.Label(label="System updates", xalign=0)
-        title.add_css_class("title-1")
-        page.append(title)
+        page.append(
+            self._page_hero(
+                "SYSTEM · UPDATES",
+                "Keep ErgenOS current",
+                "Install complete system updates with automatic snapshots and post-update health checks.",
+            )
+        )
 
         controls = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        controls.add_css_class("ergen-toolbar")
         self.update_status = Gtk.Label(label="Checking for updates...", xalign=0)
         self.update_status.set_hexpand(True)
         controls.append(self.update_status)
@@ -185,11 +339,16 @@ class ErgenPacWindow(Adw.ApplicationWindow):
         page.set_margin_end(24)
         page.add_css_class("ergen-page")
 
-        title = Gtk.Label(label="Software", xalign=0)
-        title.add_css_class("title-1")
-        page.append(title)
+        page.append(
+            self._page_hero(
+                "ARCH · FLATHUB",
+                "Software for your system",
+                "Explore configured repositories and Flathub without unsupported partial upgrades.",
+            )
+        )
 
         modes = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        modes.add_css_class("ergen-toolbar")
         modes.set_halign(Gtk.Align.CENTER)
         self.explore_button = Gtk.ToggleButton(label="Explore")
         self.explore_button.set_active(True)
@@ -254,24 +413,16 @@ class ErgenPacWindow(Adw.ApplicationWindow):
             setter(24)
         page.add_css_class("ergen-page")
 
-        hero = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        hero.add_css_class("ergen-hero")
-        title = Gtk.Label(label="Driver Manager", xalign=0)
-        title.add_css_class("title-1")
-        hero.append(title)
-        description = Gtk.Label(
-            label=(
-                "Detect graphics hardware and processor microcode, then install "
-                "recommended packages from configured repositories."
-            ),
-            xalign=0,
-            wrap=True,
+        page.append(
+            self._page_hero(
+                "HARDWARE · DRIVERS",
+                "Driver Manager",
+                "Detect graphics hardware and processor microcode, then install recommended packages.",
+            )
         )
-        description.add_css_class("dim-label")
-        hero.append(description)
-        page.append(hero)
 
         controls = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        controls.add_css_class("ergen-toolbar")
         self.driver_status = Gtk.Label(label="Hardware has not been scanned yet", xalign=0)
         self.driver_status.set_hexpand(True)
         controls.append(self.driver_status)

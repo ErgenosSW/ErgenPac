@@ -19,6 +19,9 @@
     <category>PackageManager</category>
   </categories>
   <releases>
+    <release version="0.2.4" date="2026-10-11">
+      <description><p>Refreshes the interface with a unified ErgenOS website and Wiki inspired visual system.</p></description>
+    </release>
     <release version="0.2.3" date="2026-10-11">
       <description><p>Adds automatic ErgenCTL post-update health verification.</p></description>
     </release>
