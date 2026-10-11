@@ -52,6 +52,12 @@ class HelperTests(TestCase):
     def test_reboot_is_an_exact_allowlisted_operation(self) -> None:
         self.assertEqual(command(["reboot"]), ["/usr/bin/systemctl", "reboot"])
 
+    def test_update_verification_only_runs_ergenctl_read_only_check(self) -> None:
+        self.assertEqual(
+            command(["verify-update"]),
+            ["/usr/bin/ergenctl", "verify-update", "--json"],
+        )
+
     def test_hybrid_profile_enables_switcheroo_control_after_installation(self) -> None:
         self.assertEqual(
             driver_post_install_commands(["mesa", "switcheroo-control"]),

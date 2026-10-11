@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -43,6 +44,14 @@ class DriverRecommendation:
     category: str
     hardware: str
     packages: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class UpdateVerification:
+    state: str
+    success: bool
+    reboot_required: bool
+    problems: tuple[str, ...]
 
 
 DRIVER_PACKAGES = frozenset({
@@ -406,6 +415,8 @@ def helper_command(action: str, package: str | None = None) -> list[str]:
         return [*base, "upgrade"]
     if action == "reboot" and package is None:
         return [*base, "reboot"]
+    if action == "verify-update" and package is None:
+        return [*base, "verify-update"]
     if action in {"install", "remove", "install-flatpak", "remove-flatpak"} and package is not None:
         return [*base, action, validate_package_name(package)]
     raise ValueError("invalid package operation")
@@ -420,3 +431,53 @@ def driver_helper_command(packages: Sequence[str]) -> list[str]:
 
 def reboot_recommended(updates: list[Update]) -> bool:
     return any(update.name.startswith(REBOOT_PACKAGES) for update in updates)
+
+
+def parse_update_verification(output: str) -> UpdateVerification:
+    try:
+        payload = json.loads(output)
+        report = payload["update_verification"]
+        if (
+            payload.get("schema_version") != 1
+            or payload.get("application") != "ErgenCTL"
+            or not isinstance(report, dict)
+            or report.get("state") not in {"healthy", "reboot-required", "attention", "critical"}
+            or not isinstance(report.get("success"), bool)
+            or not isinstance(report.get("reboot_required"), bool)
+            or not isinstance(report.get("checks"), list)
+        ):
+            raise ValueError("incompatible report")
+        problems = tuple(
+            str(check.get("summary"))
+            for check in report["checks"]
+            if isinstance(check, dict)
+            and check.get("status") in {"warning", "fail", "unknown"}
+            and check.get("summary")
+        )
+        return UpdateVerification(
+            report["state"],
+            report["success"],
+            report["reboot_required"],
+            problems,
+        )
+    except (KeyError, TypeError, json.JSONDecodeError) as error:
+        raise ValueError("invalid ErgenCTL update verification report") from error
+
+
+def update_verification_message(report: UpdateVerification) -> str:
+    if report.state == "healthy":
+        return "The update completed successfully and the system health check found no problems."
+    if report.state == "reboot-required":
+        return (
+            "The update completed successfully. "
+            "Restart the system to load the new kernel and modules."
+        )
+    heading = (
+        "The update completed, but a critical system problem was detected."
+        if report.state == "critical"
+        else "The update completed, but the system health check needs attention."
+    )
+    if not report.problems:
+        return f"{heading}\n\nOpen ErgenCTL for detailed diagnostics."
+    details = "\n".join(f"• {problem}" for problem in report.problems[:4])
+    return f"{heading}\n\n{details}\n\nOpen ErgenCTL for detailed diagnostics."

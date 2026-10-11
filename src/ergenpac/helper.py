@@ -60,6 +60,8 @@ def command(arguments: list[str]) -> list[str]:
         return ["/usr/bin/pacman", "-Syu", "--needed", "--noconfirm", *packages]
     if arguments == ["reboot"]:
         return ["/usr/bin/systemctl", "reboot"]
+    if arguments == ["verify-update"]:
+        return ["/usr/bin/ergenctl", "verify-update", "--json"]
     raise ValueError("invalid operation")
 
 

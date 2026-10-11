@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-import sys
-import os
 import errno
+import os
 import pty
 import select
 import signal
 import subprocess
+import sys
 import threading
-from pathlib import Path
 from collections.abc import Callable, Sequence
+from pathlib import Path
 
 import gi
 
@@ -32,16 +32,18 @@ from .core import (
     parse_flatpak_search,
     parse_flatpak_updates,
     parse_pacman_info,
-    parse_total_download_size,
-    parse_transferred_size,
-    parse_transfer_identifier,
     parse_progress,
     parse_search_output,
+    parse_total_download_size,
     parse_transaction_preview,
+    parse_transfer_identifier,
+    parse_transferred_size,
+    parse_update_verification,
     parse_updates,
     reboot_recommended,
     recommend_drivers,
     sort_packages,
+    update_verification_message,
 )
 
 
@@ -822,28 +824,51 @@ class ErgenPacWindow(Adw.ApplicationWindow):
 
     def _operation_finished(self, status: int, output: str, error: str) -> None:
         self._hide_progress()
-        self._set_busy(False)
         if status == 0:
-            result = "The software state was refreshed successfully."
             if self._operation_action == "upgrade":
-                self.reboot_box.set_visible(True)
-                if reboot_recommended(self._updates):
-                    result += "\n\nA restart is recommended to finish applying system updates."
-            self._show_result(self._operation_label, result)
-            if self._operation_action == "install-drivers":
-                GLib.idle_add(self._scan_drivers)
+                self._set_busy(True)
+                self.update_status.set_text("Verifying the updated system...")
+                self._run(helper_command("verify-update"), self._update_verification_finished)
                 return
-            self._clear_box(self.installed_results)
-            if self.software_stack.get_visible_child_name() == "installed":
-                self._load_installed_apps()
-            elif len(self.search.get_text().strip()) >= 2:
-                self._refresh_updates_after_search = True
-                self._search_packages(self.search)
-            else:
-                self.check_updates()
+            self._complete_successful_operation("The software state was refreshed successfully.")
         else:
+            self._set_busy(False)
             effective_status = 130 if self._cancel_requested else status
             self._show_result("Operation failed", friendly_error(error or output, effective_status))
+
+    def _update_verification_finished(self, status: int, output: str, error: str) -> None:
+        try:
+            report = parse_update_verification(output)
+        except ValueError:
+            self.reboot_box.set_visible(reboot_recommended(self._updates))
+            detail = (
+                friendly_error(error or output, status)
+                if error or not output
+                else "Invalid ErgenCTL response."
+            )
+            self._complete_successful_operation(
+                "The update completed successfully, but post-update verification could not be read."
+                f"\n\n{detail}\n\nOpen ErgenCTL to run diagnostics manually."
+            )
+            return
+
+        self.reboot_box.set_visible(report.reboot_required)
+        self._complete_successful_operation(update_verification_message(report))
+
+    def _complete_successful_operation(self, result: str) -> None:
+        self._set_busy(False)
+        self._show_result(self._operation_label, result)
+        if self._operation_action == "install-drivers":
+            GLib.idle_add(self._scan_drivers)
+            return
+        self._clear_box(self.installed_results)
+        if self.software_stack.get_visible_child_name() == "installed":
+            self._load_installed_apps()
+        elif len(self.search.get_text().strip()) >= 2:
+            self._refresh_updates_after_search = True
+            self._search_packages(self.search)
+        else:
+            self.check_updates()
 
     def _show_progress(self, heading: str) -> None:
         window = Gtk.Window(title=heading, transient_for=self, modal=True, resizable=False)

@@ -23,6 +23,7 @@ ErgenPac separates configured pacman repositories and Flathub results, shows use
 - Inline installation progress beside the selected package
 - Aggregate update and driver download progress with safe cancellation before package deployment
 - A centered restart action after a completed system update
+- Automatic post-update verification through ErgenCTL, covering snapshots, boot files, GRUB, Secure Boot, kernel modules and failed services
 - Friendly errors for offline repositories, locked databases, invalid signatures and low disk space
 - Restricted polkit helper for privileged operations
 

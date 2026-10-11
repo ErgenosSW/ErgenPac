@@ -4,24 +4,26 @@ from ergenpac.core import (
     Package,
     Update,
     driver_helper_command,
+    format_size,
+    friendly_error,
     helper_command,
-    parse_flatpak_search,
     parse_flatpak_installed,
+    parse_flatpak_search,
     parse_flatpak_updates,
-    parse_transaction_preview,
     parse_pacman_info,
-    parse_total_download_size,
-    parse_transferred_size,
-    parse_transfer_identifier,
     parse_progress,
     parse_search_output,
+    parse_total_download_size,
+    parse_transaction_preview,
+    parse_transfer_identifier,
+    parse_transferred_size,
+    parse_update_verification,
     parse_updates,
-    friendly_error,
-    format_size,
     reboot_recommended,
     recommend_drivers,
-    validate_package_name,
     sort_packages,
+    update_verification_message,
+    validate_package_name,
 )
 
 
@@ -47,6 +49,21 @@ class UpdateParsingTests(TestCase):
         updates = parse_flatpak_updates("org.gimp.GIMP\tGIMP\t3.0\tflathub\n")
         self.assertEqual(updates[0].backend, "flatpak")
         self.assertEqual(updates[0].source, "flathub")
+
+    def test_ergenctl_update_verification_is_parsed(self) -> None:
+        report = parse_update_verification(
+            '{"schema_version":1,"application":"ErgenCTL","update_verification":'
+            '{"state":"attention","success":true,"reboot_required":false,"checks":['
+            '{"status":"warning","summary":"one failed service"}]}}'
+        )
+
+        self.assertEqual(report.state, "attention")
+        self.assertEqual(report.problems, ("one failed service",))
+        self.assertIn("one failed service", update_verification_message(report))
+
+    def test_incompatible_update_verification_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            parse_update_verification('{"schema_version":2,"application":"ErgenCTL"}')
 
 
 class FlatpakParsingTests(TestCase):
@@ -102,6 +119,12 @@ class CommandTests(TestCase):
                 "install-flatpak",
                 "net.lutris.Lutris",
             ],
+        )
+
+    def test_update_verification_uses_restricted_helper(self) -> None:
+        self.assertEqual(
+            helper_command("verify-update"),
+            ["pkexec", "/usr/lib/ergenpac/ergenpac-helper", "verify-update"],
         )
 
     def test_driver_install_accepts_only_known_packages(self) -> None:
