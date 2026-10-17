@@ -90,6 +90,8 @@ class ErgenPacWindow(Adw.ApplicationWindow):
         self._driver_recommendations: list[DriverRecommendation] = []
         self._driver_packages: list[str] = []
 
+        self._responsive_toolbars = []
+        self._responsive_pages = []
         self._install_styles()
 
         toolbar = Adw.ToolbarView()
@@ -106,8 +108,15 @@ class ErgenPacWindow(Adw.ApplicationWindow):
         toolbar.add_top_bar(header)
         self.set_content(toolbar)
 
-        shell = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-        toolbar.set_content(shell)
+        split = Adw.OverlaySplitView()
+        split.set_min_sidebar_width(220)
+        split.set_max_sidebar_width(258)
+        self._split_view = split
+        toolbar.set_content(split)
+        menu_button = Gtk.Button(icon_name="sidebar-show-symbolic", tooltip_text="Show navigation")
+        menu_button.set_visible(False)
+        menu_button.connect("clicked", lambda _button: split.set_show_sidebar(not split.get_show_sidebar()))
+        header.pack_start(menu_button)
 
         navigation = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         navigation.add_css_class("ergen-navigation")
@@ -153,15 +162,46 @@ class ErgenPacWindow(Adw.ApplicationWindow):
         footer = Gtk.Label(label="ErgenOS · Safe updates", xalign=0)
         footer.add_css_class("ergen-muted")
         navigation.append(footer)
-        shell.append(navigation)
-        shell.append(self.stack)
+        sidebar_scroll = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER)
+        sidebar_scroll.set_child(navigation)
+        split.set_sidebar(sidebar_scroll)
+        split.set_content(self.stack)
+        self.stack.set_hhomogeneous(False)
+        self.stack.set_vhomogeneous(False)
 
         self.stack.add_named(self._build_updates_page(), "updates")
         self.stack.add_named(self._build_software_page(), "software")
         self.stack.add_named(self._build_drivers_page(), "drivers")
         self.stack.add_named(self._build_gaming_page(), "gaming")
         self.stack.set_visible_child_name("updates")
+        self.set_size_request(360, 240)
+        compact = Adw.Breakpoint.new(Adw.BreakpointCondition.parse("max-width: 850sp"))
+        compact.add_setter(split, "collapsed", True)
+        compact.add_setter(menu_button, "visible", True)
+        compact.add_setter(header_title, "visible", False)
+        compact.connect("apply", lambda *_: self._set_compact(True))
+        compact.connect("unapply", lambda *_: self._set_compact(False))
+        self.add_breakpoint(compact)
         GLib.idle_add(self.check_updates)
+
+    def _set_compact(self, compact: bool) -> None:
+        if compact:
+            self.add_css_class("compact")
+            self._split_view.set_show_sidebar(False)
+        else:
+            self.remove_css_class("compact")
+            self._split_view.set_show_sidebar(True)
+        for page in self._responsive_pages:
+            for side in ("top", "bottom", "start", "end"):
+                getattr(page, "set_margin_" + side)(0 if compact else 24)
+        for controls in self._responsive_toolbars:
+            controls.set_orientation(Gtk.Orientation.VERTICAL if compact else Gtk.Orientation.HORIZONTAL)
+
+    def _scroll_page(self, page: Gtk.Widget) -> Gtk.Widget:
+        scroll = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER)
+        scroll.set_child(page)
+        self._responsive_pages.append(page)
+        return scroll
 
     @staticmethod
     def _navigation_button(label: str, icon_name: str) -> Gtk.ToggleButton:
@@ -178,6 +218,8 @@ class ErgenPacWindow(Adw.ApplicationWindow):
     def _navigation_changed(self, button: Gtk.ToggleButton, page: str) -> None:
         if button.get_active():
             self.stack.set_visible_child_name(page)
+            if self._split_view.get_collapsed():
+                self._split_view.set_show_sidebar(False)
             if page == "gaming" and hasattr(self, "gaming_list"):
                 self._refresh_gaming()
 
@@ -185,6 +227,11 @@ class ErgenPacWindow(Adw.ApplicationWindow):
         Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.PREFER_DARK)
         provider = Gtk.CssProvider()
         provider.load_from_data(b"""
+          .compact .ergen-page { padding: 12px; margin: 0; }
+          .compact .ergen-hero { padding: 18px; border-radius: 18px; }
+          .compact .ergen-display { font-size: 24px; }
+          .compact .ergen-toolbar { padding: 12px; }
+
           window.ergen-shell {
             background: linear-gradient(145deg, #030a14, #071525);
             color: #eaf3ff;
@@ -197,7 +244,7 @@ class ErgenPacWindow(Adw.ApplicationWindow):
           .ergen-header-brand { margin-left: 4px; }
           .ergen-header-title { color: #eaf3ff; font-size: 16px; font-weight: 800; }
           .ergen-navigation {
-            min-width: 220px;
+            min-width: 0;
             padding: 26px 18px;
             border-right: 1px solid alpha(#8fbeeb, 0.16);
             background: linear-gradient(165deg, #0a2744, #06111f);
@@ -305,9 +352,11 @@ class ErgenPacWindow(Adw.ApplicationWindow):
         )
 
         controls = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        self._responsive_toolbars.append(controls)
         controls.add_css_class("ergen-toolbar")
         self.update_status = Gtk.Label(label="Checking for updates...", xalign=0)
         self.update_status.set_hexpand(True)
+        self.update_status.set_wrap(True)
         controls.append(self.update_status)
 
         self.refresh_button = Gtk.Button(label="Check again")
@@ -337,11 +386,12 @@ class ErgenPacWindow(Adw.ApplicationWindow):
 
         scrolled = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER)
         scrolled.set_vexpand(True)
+        scrolled.set_min_content_height(180)
         self.update_list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
         self.update_list.add_css_class("boxed-list")
         scrolled.set_child(self.update_list)
         page.append(scrolled)
-        return page
+        return self._scroll_page(page)
 
     def _build_software_page(self) -> Gtk.Widget:
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
@@ -372,7 +422,7 @@ class ErgenPacWindow(Adw.ApplicationWindow):
         modes.append(self.installed_button)
         page.append(modes)
 
-        self.software_stack = Gtk.Stack()
+        self.software_stack = Gtk.Stack(hhomogeneous=False, vhomogeneous=False)
         self.software_stack.set_vexpand(True)
 
         explore = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
@@ -384,11 +434,13 @@ class ErgenPacWindow(Adw.ApplicationWindow):
         self.search_status = Gtk.Label(
             label="Search configured system repositories and Flathub", xalign=0
         )
+        self.search_status.set_wrap(True)
         self.search_status.add_css_class("dim-label")
         explore.append(self.search_status)
 
         scrolled = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER)
         scrolled.set_vexpand(True)
+        scrolled.set_min_content_height(180)
         self.package_results = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
         scrolled.set_child(self.package_results)
         explore.append(scrolled)
@@ -397,8 +449,10 @@ class ErgenPacWindow(Adw.ApplicationWindow):
 
         installed = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
         installed_controls = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        self._responsive_toolbars.append(installed_controls)
         self.installed_status = Gtk.Label(label="Installed applications", xalign=0)
         self.installed_status.set_hexpand(True)
+        self.installed_status.set_wrap(True)
         self.installed_status.add_css_class("dim-label")
         installed_controls.append(self.installed_status)
         self.installed_refresh_button = Gtk.Button(label="Refresh")
@@ -407,12 +461,13 @@ class ErgenPacWindow(Adw.ApplicationWindow):
         installed.append(installed_controls)
         installed_scroll = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER)
         installed_scroll.set_vexpand(True)
+        installed_scroll.set_min_content_height(180)
         self.installed_results = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
         installed_scroll.set_child(self.installed_results)
         installed.append(installed_scroll)
         self.software_stack.add_named(installed, "installed")
         page.append(self.software_stack)
-        return page
+        return self._scroll_page(page)
 
     def _build_gaming_page(self) -> Gtk.Widget:
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
@@ -425,6 +480,7 @@ class ErgenPacWindow(Adw.ApplicationWindow):
             "Choose your launchers and tools. Install only what you need.",
         ))
         controls = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        self._responsive_toolbars.append(controls)
         controls.add_css_class("ergen-toolbar")
         self.gaming_status = Gtk.Label(label="Refresh to check installed tools", xalign=0, hexpand=True)
         self.gaming_status.set_wrap(True)
@@ -443,12 +499,12 @@ class ErgenPacWindow(Adw.ApplicationWindow):
         )
         note.add_css_class("dim-label")
         page.append(note)
-        scroll = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, vexpand=True)
+        scroll = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, vexpand=True, min_content_height=180)
         self.gaming_list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
         self.gaming_list.add_css_class("boxed-list")
         scroll.set_child(self.gaming_list)
         page.append(scroll)
-        return page
+        return self._scroll_page(page)
 
     def _refresh_gaming(self) -> None:
         if self._busy:
@@ -563,9 +619,11 @@ class ErgenPacWindow(Adw.ApplicationWindow):
         )
 
         controls = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        self._responsive_toolbars.append(controls)
         controls.add_css_class("ergen-toolbar")
         self.driver_status = Gtk.Label(label="Hardware has not been scanned yet", xalign=0)
         self.driver_status.set_hexpand(True)
+        self.driver_status.set_wrap(True)
         controls.append(self.driver_status)
         self.driver_scan_button = Gtk.Button(label="Scan hardware")
         self.driver_scan_button.connect("clicked", lambda _button: self._scan_drivers())
@@ -579,11 +637,12 @@ class ErgenPacWindow(Adw.ApplicationWindow):
 
         scrolled = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER)
         scrolled.set_vexpand(True)
+        scrolled.set_min_content_height(180)
         self.driver_list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
         self.driver_list.add_css_class("boxed-list")
         scrolled.set_child(self.driver_list)
         page.append(scrolled)
-        return page
+        return self._scroll_page(page)
 
     def _scan_drivers(self) -> None:
         if self._busy:
