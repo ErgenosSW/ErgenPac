@@ -1,0 +1,70 @@
+name: Release package
+
+on:
+  push:
+    tags:
+      - "v[0-9]*.[0-9]*.[0-9]*"
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Regression tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Validate release tag
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          code_version=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+          test "$version" = "$code_version"
+      - name: Check Python syntax
+        run: python -m compileall -q src tests
+      - name: Run regression suite
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+          PYTHONPATH: src
+        run: python -m unittest discover -s tests -v
+
+  package:
+    name: Build unsigned Arch package
+    needs: tests
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+    steps:
+      - name: Install build tools
+        run: pacman -Syu --noconfirm git pacman-contrib sudo
+      - uses: actions/checkout@v6
+      - name: Create build user
+        run: |
+          useradd -m builder
+          printf 'builder ALL=(ALL:ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+      - name: Prepare tagged package recipe
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          sed -i "s/^pkgver=.*/pkgver=$version/; s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+          sudo -u builder updpkgsums
+      - name: Build unsigned package
+        run: sudo -u builder makepkg --syncdeps --noconfirm --needed --nocheck
+      - name: Inspect package
+        shell: bash
+        run: |
+          package=$(find . -maxdepth 1 -type f -name '*.pkg.tar.zst' ! -name '*-debug-*' -print -quit)
+          test -n "$package"
+          pacman -Qip "$package"
+          mkdir -p artifacts
+          cp "$package" artifacts/
+      - uses: actions/upload-artifact@v6
+        with:
+          name: ergenpac-${{ github.ref_name }}-arch-package
+          path: artifacts/*.pkg.tar.zst
+          if-no-files-found: error
