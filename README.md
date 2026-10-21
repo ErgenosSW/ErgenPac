@@ -5,6 +5,10 @@
 <h1 align="center">ErgenPac</h1>
 
 <p align="center">
+  <a href="https://github.com/ErgenosSW/ErgenPac/actions/workflows/tests.yml"><img src="https://github.com/ErgenosSW/ErgenPac/actions/workflows/tests.yml/badge.svg?branch=main" alt="Tests"></a>
+</p>
+
+<p align="center">
   Graphical package manager and system updater for ErgenOS.
 </p>
 
