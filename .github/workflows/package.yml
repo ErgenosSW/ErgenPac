@@ -5,8 +5,18 @@ on:
     tags:
       - "v[0-9]*.[0-9]*.[0-9]*"
 
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing release tag to rebuild
+        required: true
+        type: string
+
 permissions:
   contents: read
+
+env:
+  RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
 
 jobs:
   tests:
@@ -14,6 +24,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - name: Install GUI test dependencies
         run: |
           sudo apt-get update
@@ -21,8 +33,9 @@ jobs:
       - name: Validate release tag
         shell: bash
         run: |
-          version="${GITHUB_REF_NAME#v}"
-          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)(-([1-9][0-9]*))?$ ]]
+          version="${BASH_REMATCH[1]}"
           code_version=$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
           test "$version" = "$code_version"
       - name: Check Python syntax
@@ -43,6 +56,22 @@ jobs:
       - name: Install build tools
         run: pacman -Syu --noconfirm git pacman-contrib sudo
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+      - name: Configure signed ErgenOS repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            https://raw.githubusercontent.com/ErgenosSW/ErgenOS-Repo/main/keys/ergenos.asc \
+            --output /tmp/ergenos.asc
+          fingerprint=$(gpg --batch --show-keys --with-colons /tmp/ergenos.asc | awk -F: '$1 == "fpr" { print $10; exit }')
+          test "$fingerprint" = 28F9539131BC392DAF4099C595FE7988F432AFDA
+          pacman-key --init
+          pacman-key --add /tmp/ergenos.asc
+          pacman-key --lsign-key "$fingerprint"
+          printf '\n[ergenos]\nSigLevel = Required\nServer = https://ergenossw.github.io/ErgenOS-Repo/$arch\n' >> /etc/pacman.conf
+          pacman -Syu --noconfirm
       - name: Create build user
         run: |
           useradd -m builder
@@ -51,8 +80,16 @@ jobs:
       - name: Prepare tagged package recipe
         shell: bash
         run: |
-          version="${GITHUB_REF_NAME#v}"
-          sed -i "s/^pkgver=.*/pkgver=$version/; s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)(-([1-9][0-9]*))?$ ]]
+          version="${BASH_REMATCH[1]}"
+          revision="${BASH_REMATCH[3]:-1}"
+          sed -i "s/^pkgver=.*/pkgver=$version/; s/^pkgrel=.*/pkgrel=$revision/" PKGBUILD
+          # Build this checkout, including changes made after the version-only tag.
+          git archive --format=tar.gz --prefix="ErgenPac-${version}/" \
+            --output="ergenpac-${version}.tar.gz" HEAD
+          sed -i 's|^source=.*|source=("ergenpac-${pkgver}.tar.gz")|' PKGBUILD
+          chown builder:builder "ergenpac-${version}.tar.gz"
           sudo -u builder updpkgsums
       - name: Build unsigned package
         run: sudo -u builder makepkg --syncdeps --noconfirm --needed --nocheck
@@ -66,6 +103,6 @@ jobs:
           cp "$package" artifacts/
       - uses: actions/upload-artifact@v6
         with:
-          name: ergenpac-${{ github.ref_name }}-arch-package
+          name: ergenpac-${{ env.RELEASE_TAG }}-arch-package
           path: artifacts/*.pkg.tar.zst
           if-no-files-found: error
