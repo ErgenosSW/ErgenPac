@@ -86,7 +86,7 @@ jobs:
           revision="${BASH_REMATCH[3]:-1}"
           sed -i "s/^pkgver=.*/pkgver=$version/; s/^pkgrel=.*/pkgrel=$revision/" PKGBUILD
           # Build this checkout, including changes made after the version-only tag.
-          git archive --format=tar.gz --prefix="ErgenPac-${version}/" \
+          sudo -u builder git archive --format=tar.gz --prefix="ErgenPac-${version}/" \
             --output="ergenpac-${version}.tar.gz" HEAD
           sed -i 's|^source=.*|source=("ergenpac-${pkgver}.tar.gz")|' PKGBUILD
           chown builder:builder "ergenpac-${version}.tar.gz"
