@@ -23,7 +23,7 @@ jobs:
     name: Regression tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ env.RELEASE_TAG }}
       - name: Install GUI test dependencies
@@ -55,7 +55,7 @@ jobs:
     steps:
       - name: Install build tools
         run: pacman -Syu --noconfirm git pacman-contrib sudo
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ env.RELEASE_TAG }}
       - name: Configure signed ErgenOS repository
@@ -101,7 +101,7 @@ jobs:
           pacman -Qip "$package"
           mkdir -p artifacts
           cp "$package" artifacts/
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: ergenpac-${{ env.RELEASE_TAG }}-arch-package
           path: artifacts/*.pkg.tar.zst

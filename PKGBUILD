@@ -10,7 +10,7 @@ license=('GPL-3.0-or-later')
 depends=('ergenctl>=1.1.0.dev-9' 'fakeroot' 'flatpak' 'gtk4' 'libadwaita' 'pacman' 'pacman-contrib' 'pciutils' 'polkit' 'python' 'python-gobject')
 makedepends=('meson')
 source=("${pkgname}-${pkgver}.tar.gz::https://github.com/ErgenosSW/ErgenPac/archive/refs/tags/v${pkgver}.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('c30b16e1b4c1a36a2bf6fac719a29c8f4004be0c8e276cc3b54f7d7fbbb8a2e7')
 
 build() {
   arch-meson "ErgenPac-${pkgver}" build
