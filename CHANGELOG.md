@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Integrate the existing ErgenCTL Gaming Check with the ErgenPac Gaming page.
+- Run diagnostics without privileges before refreshing the package catalog.
+- Highlight optional tools recommended by the diagnostic report and direct
+  graphics/runtime problems to Driver Manager.
+- Validate the ErgenCTL JSON schema and keep the existing catalog usable when
+  ErgenCTL is missing or returns an incompatible report.
+- Expand the regression suite to 49 tests.
+
 ## 1.0.1 — 2026-10-11
 
 - Refresh Gaming availability with checkupdates in a private temporary database.
@@ -38,6 +48,6 @@ switcheroo-control activation and Secure Boot refresh after driver installation.
 
 ## Roadmap
 
-Gaming Check and guided setup are deferred to 1.3. Installing a tool does not
-enable it globally or configure the corresponding Flatpak runtime. No automated
-ErgenProton-WoW installation is included in this release.
+Per-game configuration and ErgenProton-WoW installation remain future work.
+Installing a tool does not enable it globally or configure the corresponding
+Flatpak runtime.

@@ -52,6 +52,11 @@ GOverlay and Gamescope. Each tool has its own install action and usage hint;
 nothing is selected or installed automatically. GameMode and MangoHud include
 32-bit libraries, and incomplete installations remain installable.
 
+Refresh first runs the unprivileged, read-only ErgenCTL Gaming Check. Its
+validated JSON report highlights matching optional tools and points graphics or
+runtime problems to Driver Manager. A missing or incompatible ErgenCTL report
+is shown explicitly and never blocks the existing package catalog.
+
 Native tools use configured pacman repositories, perform a complete system
 upgrade and then run ErgenCTL verification. Heroic and Faugus use the system
 Flathub remote. The page checks installed packages and refreshes repository metadata through
