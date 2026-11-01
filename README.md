@@ -12,7 +12,7 @@
   Graphical package manager and system updater for ErgenOS.
 </p>
 
-The current version is **1.0.1**, included in the validated ErgenOS 1.2 image.
+The current package is **1.0.1-3**, included in ErgenOS 1.3.
 Native package installation includes a full database refresh and system upgrade.
 Flatpak installation uses its own runtime and does not perform a Pacman upgrade.
 See [CHANGELOG.md](CHANGELOG.md) for the release history.
