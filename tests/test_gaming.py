@@ -1,11 +1,40 @@
+import json
 from unittest import TestCase
 
 from ergenpac.core import helper_command
-from ergenpac.gaming import gaming_tool, missing_packages
+from ergenpac.gaming import gaming_tool, missing_packages, parse_gaming_check
 from ergenpac.helper import command
 
 
 class GamingTests(TestCase):
+    def test_ergenctl_report_maps_only_safe_catalog_recommendations(self):
+        report = parse_gaming_check(json.dumps({
+            "schema_version": 1,
+            "application": "ErgenCTL",
+            "checks": [
+                {"id": "gaming-vulkan", "status": "warning"},
+                {"id": "gaming-gamemode", "status": "skipped"},
+                {"id": "gaming-mangohud", "status": "pass"},
+                {"id": "gaming-gamescope", "status": "unknown"},
+            ],
+        }))
+
+        self.assertEqual(report.state, "attention")
+        self.assertTrue(report.driver_attention)
+        self.assertEqual(report.recommended_tools, frozenset({"gamemode", "gamescope"}))
+
+    def test_ergenctl_report_rejects_incompatible_or_untrusted_data(self):
+        for payload in (
+            {},
+            {"schema_version": 2, "application": "ErgenCTL", "checks": []},
+            {"schema_version": 1, "application": "Other", "checks": []},
+            {"schema_version": 1, "application": "ErgenCTL", "checks": [
+                {"id": "gaming-vulkan", "status": "execute-this"},
+            ]},
+        ):
+            with self.subTest(payload=payload), self.assertRaises(ValueError):
+                parse_gaming_check(json.dumps(payload))
+
     def test_native_install_updates_system_and_includes_32_bit_support(self):
         self.assertEqual(command(["install-gaming", "mangohud"]), [
             "/usr/bin/pacman", "-Syu", "--needed", "--noconfirm",

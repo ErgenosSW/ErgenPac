@@ -1,4 +1,5 @@
 """Exercise the async catalog flow without opening a window or contacting mirrors."""
+import json
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -61,3 +62,50 @@ class GamingRefreshTests(TestCase):
         window = SimpleNamespace(_busy=True, _gaming_refresh_pending=False)
         ErgenPacWindow._refresh_gaming(window)
         self.assertTrue(window._gaming_refresh_pending)
+
+    def test_refresh_runs_unprivileged_ergenctl_check_before_package_catalog(self):
+        window = SimpleNamespace(
+            _busy=False, _gaming_refresh_pending=False,
+            gaming_status=Mock(), gaming_diagnostics=Mock(),
+            _set_busy=Mock(), _run=Mock(), _gaming_check_loaded=Mock(),
+        )
+
+        ErgenPacWindow._refresh_gaming(window)
+
+        window._run.assert_called_once_with(
+            ["ergenctl", "gaming-check", "--json"], window._gaming_check_loaded
+        )
+
+    def test_valid_diagnostic_report_is_kept_even_when_check_exits_with_failure(self):
+        payload = json.dumps({
+            "schema_version": 1,
+            "application": "ErgenCTL",
+            "checks": [
+                {"id": "gaming-vulkan", "status": "fail"},
+                {"id": "gaming-gamemode", "status": "skipped"},
+            ],
+        })
+        window = SimpleNamespace(
+            _gaming_check=None,
+            gaming_diagnostics=Mock(), gaming_drivers=Mock(),
+            _run=Mock(), _gaming_native_loaded=Mock(),
+        )
+
+        ErgenPacWindow._gaming_check_loaded(window, 1, payload, "")
+
+        self.assertEqual(window._gaming_check.state, "critical")
+        window.gaming_drivers.add_css_class.assert_called_once_with("suggested-action")
+        window._run.assert_called_once_with(["pacman", "-Qq"], window._gaming_native_loaded)
+
+    def test_missing_ergenctl_does_not_block_the_existing_catalog(self):
+        window = SimpleNamespace(
+            _gaming_check=None,
+            gaming_diagnostics=Mock(), gaming_drivers=Mock(),
+            _run=Mock(), _gaming_native_loaded=Mock(),
+        )
+
+        ErgenPacWindow._gaming_check_loaded(window, 127, "", "not found")
+
+        self.assertIsNone(window._gaming_check)
+        self.assertIn("unavailable", window.gaming_diagnostics.set_text.call_args.args[0])
+        window._run.assert_called_once_with(["pacman", "-Qq"], window._gaming_native_loaded)

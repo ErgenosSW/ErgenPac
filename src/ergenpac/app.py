@@ -21,7 +21,14 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 
-from .gaming import GAMING_TOOLS, GamingTool, gaming_tool, missing_packages
+from .gaming import (
+    GAMING_TOOLS,
+    GamingCheckReport,
+    GamingTool,
+    gaming_tool,
+    missing_packages,
+    parse_gaming_check,
+)
 
 from .core import (
     DriverRecommendation,
@@ -69,6 +76,7 @@ class ErgenPacWindow(Adw.ApplicationWindow):
         self._gaming_refresh_pending = False
         self._gaming_database = None
         self._gaming_catalog_warning = ""
+        self._gaming_check: GamingCheckReport | None = None
         self._busy = False
         self._search_timer = 0
         self._queued_search = ""
@@ -488,10 +496,17 @@ class ErgenPacWindow(Adw.ApplicationWindow):
         self.gaming_refresh = Gtk.Button(label="Refresh")
         self.gaming_refresh.connect("clicked", lambda _button: self._refresh_gaming())
         controls.append(self.gaming_refresh)
-        drivers = Gtk.Button(label="Driver Manager")
-        drivers.connect("clicked", lambda _button: self._navigation_buttons["drivers"].set_active(True))
-        controls.append(drivers)
+        self.gaming_drivers = Gtk.Button(label="Driver Manager")
+        self.gaming_drivers.connect(
+            "clicked", lambda _button: self._navigation_buttons["drivers"].set_active(True)
+        )
+        controls.append(self.gaming_drivers)
         page.append(controls)
+        self.gaming_diagnostics = Gtk.Label(
+            label="Gaming Check has not run yet.", xalign=0, wrap=True
+        )
+        self.gaming_diagnostics.add_css_class("ergen-status")
+        page.append(self.gaming_diagnostics)
         note = Gtk.Label(
             label="Set up graphics drivers before playing. Tools are enabled per game. "
                   "MangoHud and Gamescope installed here are native tools; Flatpak games need runtime-specific integration.",
@@ -512,6 +527,28 @@ class ErgenPacWindow(Adw.ApplicationWindow):
             return
         self._set_busy(True)
         self.gaming_status.set_text("Checking gaming tools...")
+        self.gaming_diagnostics.set_text("Running ErgenCTL Gaming Check...")
+        self._run(["ergenctl", "gaming-check", "--json"], self._gaming_check_loaded)
+
+    def _gaming_check_loaded(self, status: int, output: str, error: str) -> None:
+        try:
+            self._gaming_check = parse_gaming_check(output)
+        except ValueError:
+            self._gaming_check = None
+            detail = (
+                "ErgenCTL Gaming Check is unavailable. Install or update ErgenCTL, "
+                "then refresh this page."
+                if status == 127 or not output
+                else "ErgenCTL returned an incompatible Gaming Check report."
+            )
+            self.gaming_diagnostics.set_text(detail)
+            self.gaming_drivers.remove_css_class("suggested-action")
+        else:
+            self.gaming_diagnostics.set_text(self._gaming_check.summary)
+            if self._gaming_check.driver_attention:
+                self.gaming_drivers.add_css_class("suggested-action")
+            else:
+                self.gaming_drivers.remove_css_class("suggested-action")
         self._run(["pacman", "-Qq"], self._gaming_native_loaded)
 
     def _gaming_native_loaded(self, status: int, output: str, error: str) -> None:
@@ -561,6 +598,7 @@ class ErgenPacWindow(Adw.ApplicationWindow):
             for line in output.splitlines()
         )
         self._clear_list(self.gaming_list)
+        recommended = self._gaming_check.recommended_tools if self._gaming_check else frozenset()
         for tool in GAMING_TOOLS:
             native = tool.backend == "pacman"
             installed = self._gaming_native if native else self._gaming_flatpaks
@@ -569,8 +607,9 @@ class ErgenPacWindow(Adw.ApplicationWindow):
             available = (all(p in self._gaming_available for p in missing) if native
                          else flathub and installed is not None)
             source = "System repositories" if native else "Flathub · system installation"
+            recommendation = "Recommended by ErgenCTL Gaming Check\n" if tool.id in recommended else ""
             row = Adw.ActionRow(title=tool.name, subtitle=GLib.markup_escape_text(
-                f"{tool.description}\n{source}\n{tool.hint}"
+                f"{recommendation}{tool.description}\n{source}\n{tool.hint}"
             ))
             row.set_subtitle_lines(0)
             button = Gtk.Button(label="Installed" if ready else "Install" if available else "Not checked" if native and self._gaming_catalog_warning else "Unavailable")
